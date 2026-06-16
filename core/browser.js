@@ -13,29 +13,60 @@ async function getScreenSize() {
     if (_screenSize) return _screenSize;
 
     try {
-        const result = await new Promise((resolve, reject) => {
-            exec(
-                'wmic path Win32_VideoController get CurrentHorizontalResolution,CurrentVerticalResolution /format:csv',
-                { timeout: 5000 },
-                (err, stdout) => {
-                    if (err) return reject(err);
-                    // Parse CSV: Node,CurrentHorizontalResolution,CurrentVerticalResolution
-                    const lines = stdout.trim().split('\n').filter(l => l.trim());
-                    for (const line of lines) {
-                        const parts = line.split(',');
-                        const w = parseInt(parts[1]);
-                        const h = parseInt(parts[2]);
-                        if (w > 0 && h > 0) {
-                            return resolve({ width: w, height: h });
+        const platform = process.platform;
+        let result;
+
+        if (platform === 'win32') {
+            result = await new Promise((resolve, reject) => {
+                exec(
+                    'wmic path Win32_VideoController get CurrentHorizontalResolution,CurrentVerticalResolution /format:csv',
+                    { timeout: 5000 },
+                    (err, stdout) => {
+                        if (err) return reject(err);
+                        const lines = stdout.trim().split('\n').filter(l => l.trim());
+                        for (const line of lines) {
+                            const parts = line.split(',');
+                            const w = parseInt(parts[1]);
+                            const h = parseInt(parts[2]);
+                            if (w > 0 && h > 0) return resolve({ width: w, height: h });
                         }
+                        reject(new Error('No resolution found'));
                     }
-                    reject(new Error('No resolution found'));
-                }
-            );
-        });
+                );
+            });
+        } else if (platform === 'darwin') {
+            result = await new Promise((resolve, reject) => {
+                exec(
+                    'system_profiler SPDisplaysDataType | grep Resolution',
+                    { timeout: 5000 },
+                    (err, stdout) => {
+                        if (err) return reject(err);
+                        // Format: "Resolution: 2560 x 1600 Retina"
+                        const match = stdout.match(/(\d+)\s*x\s*(\d+)/);
+                        if (match) return resolve({ width: parseInt(match[1]), height: parseInt(match[2]) });
+                        reject(new Error('No resolution found'));
+                    }
+                );
+            });
+        } else {
+            // Linux
+            result = await new Promise((resolve, reject) => {
+                exec(
+                    'xdpyinfo | grep dimensions',
+                    { timeout: 5000 },
+                    (err, stdout) => {
+                        if (err) return reject(err);
+                        // Format: "dimensions: 1920x1080 pixels"
+                        const match = stdout.match(/(\d+)x(\d+)/);
+                        if (match) return resolve({ width: parseInt(match[1]), height: parseInt(match[2]) });
+                        reject(new Error('No resolution found'));
+                    }
+                );
+            });
+        }
+
         _screenSize = result;
     } catch {
-        // Fallback
         _screenSize = { width: 1920, height: 1080 };
     }
 
