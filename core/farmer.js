@@ -164,14 +164,16 @@ class Farmer {
                     await tweet.evaluate(el => {
                         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
                         el.style.outline = '2px solid red';
-                    });
+                    }).catch(() => {});
                     await randomDelay(800, 1500);
-                    await tweet.evaluate(el => { el.style.outline = ''; });
+                    await tweet.evaluate(el => { el.style.outline = ''; }).catch(() => {});
 
                     processedCount++;
-                    log.debug(`Tweet ${processedCount}: "${(tweetData.text || '').substring(0, 60)}..."`, this.profileTag);
-
                     const shouldInteract = Math.random() < this.interactProbability;
+                    log.info(
+                        `[${processedCount}/${this.maxTweetsPerLoop}] ${shouldInteract ? '→ Tương tác' : '→ Bỏ qua'} | "${(tweetData.text || '').substring(0, 50)}..."`,
+                        this.profileTag
+                    );
 
                     // Pre-fetch AI comment song song với các actions khác
                     let commentPromise = null;

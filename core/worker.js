@@ -147,7 +147,12 @@ class Worker {
             log.success('═══ Hoàn thành farming ═══', this.profileTag);
 
         } catch (err) {
-            log.error(`Lỗi nghiêm trọng: ${err.message}`, this.profileTag);
+            const isDetached = err.message?.includes('detached') || err.message?.includes('Navigating frame');
+            if (isDetached) {
+                log.warn('Browser bị detach (có thể do Stop), dừng farming', this.profileTag);
+            } else {
+                log.error(`Lỗi nghiêm trọng: ${err.message}`, this.profileTag);
+            }
             appState.updateProfileStatus(this.profileTag, 'error', { error: err.message });
 
             if (this.config.screenshot_on_error && this.page) {
