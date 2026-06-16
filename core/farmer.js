@@ -140,28 +140,29 @@ class Farmer {
                     const isVisible = await tweet.isIntersectingViewport().catch(() => false);
                     if (!isVisible) continue;
 
-                    // Scroll tweet vào giữa viewport trước khi tương tác
-                    await tweet.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
-                    await randomDelay(800, 1500);
-
-                    // Tạo unique ID cho tweet để tránh xử lý lại
+                    // Tạo unique ID — check trước khi scroll
                     const tweetId = await tweet.evaluate(el => {
                         const link = el.querySelector('a[href*="/status/"]');
                         return link ? link.getAttribute('href') : null;
                     }).catch(() => null);
 
                     if (tweetId && this._processedTweetIds.has(tweetId)) continue;
-                    if (tweetId) this._processedTweetIds.add(tweetId);
 
                     // Đọc nội dung tweet
                     const tweetData = await this._extractTweetData(tweet);
                     if (!tweetData) continue;
 
-                    // Language filter — skip hoàn toàn nếu không phải tiếng Việt
+                    // Language filter — check trước khi scroll
                     if (this.languageFilter === 'vi' && !this._isVietnamese(tweetData.text)) {
+                        if (tweetId) this._processedTweetIds.add(tweetId);
                         log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag);
                         continue;
                     }
+
+                    // Chỉ scroll vào giữa khi thật sự tương tác
+                    if (tweetId) this._processedTweetIds.add(tweetId);
+                    await tweet.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+                    await randomDelay(800, 1500);
 
                     processedCount++;
                     log.debug(`Tweet ${processedCount}: "${(tweetData.text || '').substring(0, 60)}..."`, this.profileTag);
