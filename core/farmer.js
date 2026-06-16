@@ -159,7 +159,7 @@ class Farmer {
 
                     // Language filter — skip hoàn toàn nếu không phải tiếng Việt
                     if (this.languageFilter === 'vi' && !this._isVietnamese(tweetData.text)) {
-                        log.debug('Skip (không phải tiếng Việt)', this.profileTag);
+                        log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag);
                         continue;
                     }
 
