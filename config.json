@@ -20,13 +20,13 @@
         ],
         "loop_count": 2,
         "scroll_duration_seconds": 30,
-        "interact_probability": 0.1,
+        "interact_probability": 0.25,
         "language_filter": "vi",
         "min_delay_between_actions_ms": 5000,
         "max_delay_between_actions_ms": 15000,
         "min_delay_between_loops_ms": 60000,
         "max_delay_between_loops_ms": 120000,
-        "max_tweets_per_loop": 8
+        "max_tweets_per_loop": 10
     },
     "delay_between_profiles": {
         "min": 1000,
