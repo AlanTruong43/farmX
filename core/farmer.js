@@ -279,14 +279,24 @@ class Farmer {
             const avatar = await tweetElement.$(selectors.tweet.userAvatar);
             if (!avatar) return false;
 
-            // Hover để mở popup — click sẽ navigate sang profile
+            // Hover để mở hover card — KHÔNG click (sẽ navigate sang profile)
             await avatar.hover();
-            await randomDelay(1000, 1800);
 
-            const result = await this.page.evaluate(() => {
-                const tracking = document.querySelector('[data-testid="placementTracking"]');
-                if (!tracking) return 'no_popup';
-                const buttons = tracking.querySelectorAll('[role="button"]');
+            // Chờ hover card xuất hiện
+            const hoverCard = await this.page.waitForSelector(
+                '[data-testid="HoverCard"]',
+                { visible: true, timeout: 4000 }
+            ).catch(() => null);
+
+            if (!hoverCard) {
+                log.debug('Hover card không xuất hiện', this.profileTag);
+                await this.page.mouse.move(0, 0);
+                return false;
+            }
+
+            // Tìm trạng thái nút trong hover card
+            const result = await hoverCard.evaluate(card => {
+                const buttons = card.querySelectorAll('button');
                 for (const btn of buttons) {
                     const text = btn.textContent.trim();
                     if (text === 'Following') return 'already';
@@ -299,20 +309,23 @@ class Farmer {
                 return 'not_found';
             });
 
-            // Đóng popup bằng cách move chuột ra góc
+            // Move chuột ra để đóng hover card
             await this.page.mouse.move(0, 0);
-            await randomDelay(300, 600);
+            await randomDelay(400, 700);
 
             if (result === 'clicked') {
                 log.success('➕ Followed', this.profileTag);
                 return true;
             }
             if (result === 'follow_back') {
-                log.debug('Follow back — bỏ qua follow, vẫn like + cmt', this.profileTag);
+                log.debug('Follow back — bỏ qua follow', this.profileTag);
+            } else if (result === 'already') {
+                log.debug('Đã follow trước đó', this.profileTag);
             }
             return false;
         } catch (err) {
             log.debug(`Follow lỗi: ${err.message}`, this.profileTag);
+            await this.page.mouse.move(0, 0).catch(() => {});
             return false;
         }
     }
