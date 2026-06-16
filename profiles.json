@@ -1,0 +1,54 @@
+{
+    "profiles": [
+        {
+            "genlogin_id": "25809790",
+            "username": "X 0001",
+            "enabled": false
+        },
+        {
+            "genlogin_id": "25809789",
+            "username": "X 0002",
+            "enabled": false
+        },
+        {
+            "genlogin_id": "25809788",
+            "username": "X 0003",
+            "enabled": false
+        },
+        {
+            "genlogin_id": "25809787",
+            "username": "X 0004",
+            "enabled": false
+        },
+        {
+            "genlogin_id": "25809786",
+            "username": "X 0005",
+            "enabled": false
+        },
+        {
+            "genlogin_id": "25809785",
+            "username": "X 0006",
+            "enabled": true
+        },
+        {
+            "genlogin_id": "25809784",
+            "username": "X 0007",
+            "enabled": true
+        },
+        {
+            "genlogin_id": "25809783",
+            "username": "X 0008",
+            "enabled": true
+        },
+        {
+            "genlogin_id": "25809781",
+            "username": "X 0009",
+            "enabled": true
+        },
+        {
+            "genlogin_id": "25809780",
+            "username": "X 0010",
+            "enabled": true
+        }
+    ]
+}

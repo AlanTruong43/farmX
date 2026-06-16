@@ -1,0 +1,21 @@
+{
+  "name": "x-farmer",
+  "version": "2.0.0",
+  "description": "X (Twitter) automation toolkit using GenLogin anti-detect browser profiles + AI comments + Web Dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "list": "node main.js list",
+    "farm": "node main.js farm",
+    "stop": "node main.js stop",
+    "server": "node main.js server"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.6.2",
+    "google-spreadsheet": "^5.2.0",
+    "puppeteer-core": "^22.0.0"
+  }
+}

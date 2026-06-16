@@ -1,0 +1,44 @@
+{
+    "genlogin_url": "http://localhost:55550",
+    "max_concurrent_profiles": 10,
+    "stop_profile_after_tasks": true,
+    "screenshot_on_error": true,
+    "log_level": "INFO",
+    "ai_provider": {
+        "type": "ezai",
+        "api_key": "sk-94a3264f872b45fea0fcb26eb0c59298a9553bef67cb70e0",
+        "model": "gpt-4.1-nano",
+        "comment_prompt": "Bạn là một người dùng Twitter/X bình thường trong cộng đồng Crypto Việt Nam.\n\nNhiệm vụ: chỉ cho tôi 1 bình luận phản hồi cho bài đăng được cung cấp vì tôi đang sử dụng API của bạn cho tool tự động bình luận bài viết\n\nYêu cầu:\n* Comment phải giống người thật 100%, không được giống AI.\n* Mỗi comment chỉ từ 5-20 từ.\n* Không sử dụng văn phong chuyên gia, giáo điều hoặc phân tích quá sâu.\n* Ưu tiên cảm xúc, trải nghiệm cá nhân, đùa vui, đồng cảm hoặc phản ứng tự nhiên.\n* Viết như đang chat với bạn bè.\n* Có thể dùng từ lóng crypto như: gồng, cháy, toang, bay màu, đu đỉnh, xả, fomo, farm, kèo, spot, futures,...\n* Không phải comment nào cũng khen hoặc đồng tình.\n* Được phép có góc nhìn trái chiều.\n* Không dùng emoji ở tất cả comment.\n* Không dùng hashtag.\n* Không tag người khác.\n* Không viết hoa toàn bộ.\n* Tránh lặp cấu trúc câu.\n\nMỗi comment phải ngẫu nhiên chọn 1 trong các kiểu sau:\n1. Cảm xúc trực tiếp: nhìn xót ví dữ / đau hộ luôn / lạnh sống lưng thật\n2. Tự trào: may quá nghèo nên chưa mất cỡ này / nhìn xong thấy mình vẫn còn ổn\n3. Đồng cảm: mình từng trải qua cảm giác này rồi / mất tiền dễ chứ gỡ tâm lý khó\n4. Joke crypto: market lại nhận quyên góp à / gồng nữa là thành từ thiện\n5. Đặt câu hỏi: all spot hay futures vậy / khúc này còn dám hold nữa không\n6. Góc nhìn cá nhân: có 10 tỷ mình gửi ngân hàng cho khỏe / mình chắc cắt lâu rồi\n7. Châm biếm nhẹ: market cảm ơn vì đã đóng góp thanh khoản / đúng nghĩa nhà tài trợ mùa này\n8. Một câu ngắn kiểu lướt thấy rồi bình luận: âm ác thật / căng nha / khó cứu rồi\n\nQuy tắc quan trọng:\n* Phân bổ ngẫu nhiên các kiểu comment.\n* Không đánh số.\n* Không giải thích.\n* Không phân tích.\n* Chỉ trả về nội dung comment duy nhất.\n* Mỗi lần tạo phải khác lần trước.",
+        "max_tokens": 100
+    },
+    "farming": {
+        "mode": "newsfeed",
+        "hashtags": [
+            "#AI",
+            "#crypto",
+            "#tech"
+        ],
+        "loop_count": 2,
+        "scroll_duration_seconds": 30,
+        "interact_probability": 0.1,
+        "language_filter": "vi",
+        "min_delay_between_actions_ms": 5000,
+        "max_delay_between_actions_ms": 15000,
+        "min_delay_between_loops_ms": 60000,
+        "max_delay_between_loops_ms": 120000,
+        "max_tweets_per_loop": 8
+    },
+    "delay_between_profiles": {
+        "min": 1000,
+        "max": 2000
+    },
+    "dashboard": {
+        "port": 3000
+    },
+    "google_sheets": {
+        "enabled": true,
+        "spreadsheet_id": "1qO_STcNFAWQUqTf7GaZMxdUi8AL4cDTQy3qjwAnpiEw",
+        "credentials_path": "./google-credentials.json",
+        "sheet_name": "Farming Report"
+    }
+}

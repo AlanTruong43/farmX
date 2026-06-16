@@ -1,0 +1,6 @@
+node_modules/
+*.png
+error_*.png
+sheets-token.json
+google-credentials.json
+.DS_Store
