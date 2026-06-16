@@ -7,6 +7,15 @@ echo "║           X-FARMER — KHỞI ĐỘNG (MAC)            ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
+# ─── Load nvm nếu có ────────────────────────────────
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# ─── Dùng Node 20 nếu nvm có sẵn ────────────────────
+if command -v nvm &>/dev/null; then
+    nvm use 20 --silent 2>/dev/null || true
+fi
+
 # ─── Kiểm tra Node.js ───────────────────────────────
 if ! command -v node &>/dev/null; then
     echo " [LỖI] Node.js chưa được cài đặt!"
