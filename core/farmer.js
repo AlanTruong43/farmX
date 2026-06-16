@@ -140,6 +140,10 @@ class Farmer {
                     const isVisible = await tweet.isIntersectingViewport().catch(() => false);
                     if (!isVisible) continue;
 
+                    // Scroll tweet vào giữa viewport trước khi tương tác
+                    await tweet.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+                    await randomDelay(800, 1500);
+
                     // Tạo unique ID cho tweet để tránh xử lý lại
                     const tweetId = await tweet.evaluate(el => {
                         const link = el.querySelector('a[href*="/status/"]');
