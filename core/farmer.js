@@ -4,7 +4,7 @@
  *   1. Newsfeed — lướt feed, random like, random comment (AI)
  *   2. Hashtag  — tìm theo hashtag, lướt + random like/comment
  */
-const { sleep, randomDelay, humanScroll, humanClick } = require('../utils/human');
+const { sleep, randomDelay, humanScroll } = require('../utils/human');
 const selectors = require('../utils/selectors');
 const log = require('../utils/logger');
 const { createAIProvider } = require('./ai-factory');
@@ -269,14 +269,15 @@ class Farmer {
         return viPattern.test(text);
     }
 
-    // ─── Follow người đăng bài qua popup avatar ──────────────────────
+    // ─── Follow người đăng bài qua hover card ────────────────────────
     async _followUser(tweetElement) {
         try {
             const avatar = await tweetElement.$(selectors.tweet.userAvatar);
             if (!avatar) return false;
 
-            await avatar.click();
-            await randomDelay(1500, 2500);
+            // Hover để mở popup — click sẽ navigate sang profile
+            await avatar.hover();
+            await randomDelay(1000, 1800);
 
             const result = await this.page.evaluate(() => {
                 const tracking = document.querySelector('[data-testid="placementTracking"]');
@@ -285,6 +286,7 @@ class Farmer {
                 for (const btn of buttons) {
                     const text = btn.textContent.trim();
                     if (text === 'Following') return 'already';
+                    if (text === 'Follow back') return 'follow_back';
                     if (text === 'Follow') {
                         btn.click();
                         return 'clicked';
@@ -293,24 +295,20 @@ class Farmer {
                 return 'not_found';
             });
 
+            // Đóng popup bằng cách move chuột ra góc
+            await this.page.mouse.move(0, 0);
+            await randomDelay(300, 600);
+
             if (result === 'clicked') {
-                await randomDelay(800, 1500);
                 log.success('➕ Followed', this.profileTag);
-                await this.page.keyboard.press('Escape');
-                await randomDelay(500, 800);
                 return true;
             }
-
-            if (result === 'already') {
-                log.debug('Đã follow trước đó', this.profileTag);
+            if (result === 'follow_back') {
+                log.debug('Follow back — bỏ qua follow, vẫn like + cmt', this.profileTag);
             }
-
-            await this.page.keyboard.press('Escape');
-            await randomDelay(400, 800);
             return false;
         } catch (err) {
             log.debug(`Follow lỗi: ${err.message}`, this.profileTag);
-            await this.page.keyboard.press('Escape').catch(() => {});
             return false;
         }
     }
