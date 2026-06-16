@@ -279,53 +279,70 @@ class Farmer {
             const avatar = await tweetElement.$(selectors.tweet.userAvatar);
             if (!avatar) return false;
 
-            // Hover để mở hover card — KHÔNG click (sẽ navigate sang profile)
+            // Hover để mở hover card
             await avatar.hover();
+            await randomDelay(1200, 2000);
 
             // Chờ hover card xuất hiện
             const hoverCard = await this.page.waitForSelector(
                 '[data-testid="HoverCard"]',
-                { visible: true, timeout: 4000 }
+                { visible: true, timeout: 5000 }
             ).catch(() => null);
 
             if (!hoverCard) {
                 log.debug('Hover card không xuất hiện', this.profileTag);
-                await this.page.mouse.move(0, 0);
+                await this.page.mouse.move(400, 400);
                 return false;
             }
 
-            // Tìm trạng thái nút trong hover card
-            const result = await hoverCard.evaluate(card => {
+            // Kiểm tra trạng thái nút
+            const btnText = await hoverCard.evaluate(card => {
                 const buttons = card.querySelectorAll('button');
                 for (const btn of buttons) {
                     const text = btn.textContent.trim();
-                    if (text === 'Following') return 'already';
-                    if (text === 'Follow back') return 'follow_back';
-                    if (text === 'Follow') {
-                        btn.click();
-                        return 'clicked';
-                    }
+                    if (text === 'Following' || text === 'Follow back') return text;
+                    if (text === 'Follow') return 'Follow';
                 }
-                return 'not_found';
+                return null;
             });
 
-            // Move chuột ra để đóng hover card
-            await this.page.mouse.move(0, 0);
-            await randomDelay(400, 700);
+            if (!btnText || btnText === 'Following') {
+                if (btnText === 'Following') log.debug('Đã follow trước đó', this.profileTag);
+                await this.page.mouse.move(400, 400);
+                return false;
+            }
 
-            if (result === 'clicked') {
+            if (btnText === 'Follow back') {
+                log.debug('Follow back — bỏ qua follow', this.profileTag);
+                await this.page.mouse.move(400, 400);
+                return false;
+            }
+
+            // Tìm và click nút Follow bằng Puppeteer (không dùng DOM click)
+            const allBtns = await hoverCard.$$('button');
+            let clicked = false;
+            for (const btn of allBtns) {
+                const text = await btn.evaluate(el => el.textContent.trim());
+                if (text === 'Follow') {
+                    await btn.click();
+                    clicked = true;
+                    break;
+                }
+            }
+
+            if (clicked) {
+                await randomDelay(800, 1500);
                 log.success('➕ Followed', this.profileTag);
+                await this.page.mouse.move(400, 400);
+                await randomDelay(400, 700);
                 return true;
             }
-            if (result === 'follow_back') {
-                log.debug('Follow back — bỏ qua follow', this.profileTag);
-            } else if (result === 'already') {
-                log.debug('Đã follow trước đó', this.profileTag);
-            }
+
+            await this.page.mouse.move(400, 400);
             return false;
         } catch (err) {
             log.debug(`Follow lỗi: ${err.message}`, this.profileTag);
-            await this.page.mouse.move(0, 0).catch(() => {});
+            await this.page.mouse.move(400, 400).catch(() => {});
             return false;
         }
     }
