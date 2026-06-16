@@ -32,6 +32,10 @@ export function render() {
                 <div class="value success" id="stat-liked">0</div>
             </div>
             <div class="stat-card">
+                <div class="label">Followed</div>
+                <div class="value accent" id="stat-followed">0</div>
+            </div>
+            <div class="stat-card">
                 <div class="label">Commented</div>
                 <div class="value warning" id="stat-commented">0</div>
             </div>
@@ -106,6 +110,7 @@ function updateStats(status) {
     const g = status.globalStats || {};
     setText('stat-processed', g.totalProcessed || 0);
     setText('stat-liked', g.totalLiked || 0);
+    setText('stat-followed', g.totalFollowed || 0);
     setText('stat-commented', g.totalCommented || 0);
     setText('stat-sessions', g.sessionsCompleted || 0);
 
@@ -140,7 +145,7 @@ function updateStats(status) {
             ${statusBadge}
             <span class="text-secondary text-xs">${loopInfo}</span>
             <span class="profile-stats">
-                P:${stats.processed||0} L:${stats.liked||0} C:${stats.commented||0}
+                P:${stats.processed||0} L:${stats.liked||0} F:${stats.followed||0} C:${stats.commented||0}
             </span>
         </div>`;
     }).join('');

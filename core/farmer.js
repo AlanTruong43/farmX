@@ -161,8 +161,12 @@ class Farmer {
 
                     // Chỉ scroll vào giữa khi thật sự tương tác
                     if (tweetId) this._processedTweetIds.add(tweetId);
-                    await tweet.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+                    await tweet.evaluate(el => {
+                        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                        el.style.outline = '2px solid red';
+                    });
                     await randomDelay(800, 1500);
+                    await tweet.evaluate(el => { el.style.outline = ''; });
 
                     processedCount++;
                     log.debug(`Tweet ${processedCount}: "${(tweetData.text || '').substring(0, 60)}..."`, this.profileTag);

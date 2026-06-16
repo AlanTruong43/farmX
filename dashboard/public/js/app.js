@@ -7,7 +7,6 @@ import * as profiles from './components/profiles.js';
 import * as aiConfig from './components/ai-config.js';
 import * as generalConfig from './components/general-config.js';
 import * as farmingConfig from './components/farming-config.js';
-import * as sheetsConfig from './components/sheets-config.js';
 import * as logs from './components/logs.js';
 import { connect as sseConnect } from './sse.js';
 
@@ -17,7 +16,6 @@ const routes = {
     '#ai':          aiConfig,
     '#general':     generalConfig,
     '#farming':     farmingConfig,
-    '#sheets':      sheetsConfig,
     '#logs':        logs,
 };
 

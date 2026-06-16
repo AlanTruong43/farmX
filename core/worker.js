@@ -1,9 +1,6 @@
 /**
  * Worker — Quản lý lifecycle một profile GenLogin
  * Start profile -> connect browser -> farming loop -> disconnect -> stop profile
- *
- * V2: Sheets report chạy fire-and-forget (không block farming loop)
- *     SheetsReporter init 1 lần, dùng lại cho tất cả loops
  */
 const GenLoginClient = require('./genlogin');
 const BrowserManager = require('./browser');
@@ -26,7 +23,6 @@ class Worker {
         this.slotIndex = null;
         this.isRunning = false;
         this._stopRequested = false;
-        this._sheetsReporter = null; // Init 1 lần, dùng lại
     }
 
     /**
@@ -34,47 +30,6 @@ class Worker {
      */
     requestStop() {
         this._stopRequested = true;
-    }
-
-    /**
-     * Init SheetsReporter 1 lần (lazy)
-     */
-    async _getSheetsReporter() {
-        if (this._sheetsReporter) return this._sheetsReporter;
-
-        if (!this.config.google_sheets?.enabled) return null;
-
-        try {
-            const SheetsReporter = require('./sheets-reporter');
-            const reporter = new SheetsReporter(this.config.google_sheets);
-            await reporter.init();
-            this._sheetsReporter = reporter;
-            return reporter;
-        } catch (err) {
-            log.warn(`Sheets init lỗi: ${err.message}`, this.profileTag);
-            return null;
-        }
-    }
-
-    /**
-     * Report lên Sheets — fire-and-forget (không block main loop)
-     */
-    _reportToSheets(loopStats) {
-        // Chạy async, không await — fire-and-forget
-        (async () => {
-            try {
-                const reporter = await this._getSheetsReporter();
-                if (!reporter) return;
-
-                await reporter.reportActions(
-                    this.profileTag,
-                    loopStats.likedUrls || [],
-                    loopStats.commentedUrls || []
-                );
-            } catch (err) {
-                log.warn(`Sheets report lỗi: ${err.message}`, this.profileTag);
-            }
-        })();
     }
 
     /**
@@ -134,10 +89,7 @@ class Worker {
 
             log.success('Đã đăng nhập X ✓', this.profileTag);
 
-            // 4. Pre-init SheetsReporter trong background (song song với farming)
-            if (this.config.google_sheets?.enabled) {
-                this._getSheetsReporter().catch(() => {}); // fire-and-forget init
-            }
+            // 4. Pre-init SheetsReporter đã bị xóa
 
             // 5. Farming loop
             appState.updateProfileStatus(this.profileTag, 'farming');
@@ -171,17 +123,22 @@ class Worker {
                 // Cập nhật stats
                 if (loopStats) {
                     appState.updateProfileStats(this.profileTag, loopStats);
-
-                    // Sheets report — fire-and-forget (không block loop)
-                    this._reportToSheets(loopStats);
                 }
 
-                // Delay giữa các loop
+                // Delay giữa các loop + thông báo nghỉ
                 if (loop < loopCount && !this._stopRequested) {
                     const minLoopDelay = this.farming.min_delay_between_loops_ms || 30000;
                     const maxLoopDelay = this.farming.max_delay_between_loops_ms || 60000;
-                    const waited = await randomDelay(minLoopDelay, maxLoopDelay);
-                    log.info(`Chờ ${(waited / 1000).toFixed(0)}s trước loop tiếp theo...`, this.profileTag);
+                    const waitMs = Math.floor(Math.random() * (maxLoopDelay - minLoopDelay + 1)) + minLoopDelay;
+                    log.info(`☕ Nghỉ giải lao ${(waitMs / 1000).toFixed(0)}s trước loop ${loop + 1}/${loopCount}...`, this.profileTag);
+                    await sleep(waitMs);
+
+                    // Reload trang trước loop mới
+                    if (!this._stopRequested) {
+                        log.info('🔄 Reload trang...', this.profileTag);
+                        await this.page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 60000 });
+                        await randomDelay(2000, 4000);
+                    }
                 }
             }
 

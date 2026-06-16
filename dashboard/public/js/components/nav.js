@@ -16,7 +16,6 @@ const sections = [
         title: 'System',
         routes: [
             { hash: '#general', icon: '⚙', label: 'General Config' },
-            { hash: '#sheets',  icon: '📊', label: 'Google Sheets' },
             { hash: '#logs',    icon: '📋', label: 'Logs' },
         ],
     },
