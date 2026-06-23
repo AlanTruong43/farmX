@@ -153,16 +153,6 @@ class Farmer {
                     const tweetData = await this._extractTweetData(tweet);
                     if (!tweetData) continue;
 
-                    // Bỏ qua bài quảng cáo
-                    const isAd = await tweet.evaluate(el => {
-                        return !!el.querySelector('[style*="color: rgb(255, 255, 255)"]');
-                    }).catch(() => false);
-                    if (isAd) {
-                        if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (quảng cáo)', this.profileTag);
-                        continue;
-                    }
-
                     // Language filter
                     const lang = this.languageFilter;
                     if (lang === 'vi' && !this._isVietnamese(tweetData.text)) {
@@ -181,7 +171,7 @@ class Farmer {
                         continue;
                     }
 
-                    // Chỉ scroll vào giữa khi thật sự tương tác
+                    // Scroll vào giữa
                     if (tweetId) this._processedTweetIds.add(tweetId);
                     await tweet.evaluate(el => {
                         el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -192,7 +182,16 @@ class Farmer {
 
                     processedCount++;
                     const shouldInteract = Math.random() < this.interactProbability;
+
+                    // Nếu sắp tương tác, check quảng cáo trước
                     if (shouldInteract) {
+                        const isAd = await tweet.evaluate(el => {
+                            return !!el.querySelector('[style="color: rgb(255, 255, 255); text-overflow: ellipsis;"]');
+                        }).catch(() => false);
+                        if (isAd) {
+                            log.info(`→ Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop} (quảng cáo)`, this.profileTag);
+                            continue;
+                        }
                         log.info(`→ Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
                     } else {
                         log.info(`→ Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);

@@ -114,6 +114,21 @@ export async function init() {
 
 async function handleSave(e) {
     e.preventDefault();
+
+    // Normalize comma → dot cho các field số, báo lỗi nếu có dấu phẩy
+    const numericIds = ['f-loops', 'f-interact-prob', 'f-scroll', 'f-max-tweets',
+                        'f-min-action', 'f-max-action', 'f-min-loop', 'f-max-loop'];
+    for (const id of numericIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (el.value.includes(',')) {
+            toast(`Dùng dấu chấm thay vì dấu phẩy — đã tự động sửa`, 'error');
+            el.value = el.value.replace(',', '.');
+            el.focus();
+            return;
+        }
+    }
+
     try {
         await api.updateFarming({
             mode: getVal('f-mode'),
