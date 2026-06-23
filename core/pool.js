@@ -32,6 +32,8 @@ class WorkerPool {
         for (const worker of this.activeWorkers) {
             worker.requestStop();
         }
+        // Cập nhật UI ngay lập tức thay vì chờ workers hoàn tất
+        appState.setFarmingActive(false);
         log.warn('Stop ALL đã được yêu cầu');
     }
 

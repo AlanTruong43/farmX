@@ -44,6 +44,8 @@ export function render() {
                         <select class="form-control" id="f-lang-filter">
                             <option value="">Tất cả ngôn ngữ</option>
                             <option value="vi">Chỉ tiếng Việt</option>
+                            <option value="en">Chỉ tiếng Anh</option>
+                            <option value="vi+en">Tiếng Việt + Tiếng Anh</option>
                         </select>
                     </div>
                 </div>

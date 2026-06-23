@@ -23,6 +23,7 @@ class Farmer {
         this.scrollDuration = this.farming.scroll_duration_seconds ?? 15;
         this.minActionDelay = this.farming.min_delay_between_actions_ms ?? 3000;
         this.maxActionDelay = this.farming.max_delay_between_actions_ms ?? 8000;
+        this.languageFilter = this.farming.language_filter || '';
 
         // Track tweets đã xử lý (tránh xử lý lại sau scroll)
         this._processedTweetIds = new Set();
@@ -152,10 +153,31 @@ class Farmer {
                     const tweetData = await this._extractTweetData(tweet);
                     if (!tweetData) continue;
 
-                    // Language filter — check trước khi scroll
-                    if (this.languageFilter === 'vi' && !this._isVietnamese(tweetData.text)) {
+                    // Bỏ qua bài quảng cáo
+                    const isAd = await tweet.evaluate(el => {
+                        return !!el.querySelector('[style*="color: rgb(255, 255, 255)"]');
+                    }).catch(() => false);
+                    if (isAd) {
+                        if (tweetId) this._processedTweetIds.add(tweetId);
+                        log.info('⏭ Skip (quảng cáo)', this.profileTag);
+                        continue;
+                    }
+
+                    // Language filter
+                    const lang = this.languageFilter;
+                    if (lang === 'vi' && !this._isVietnamese(tweetData.text)) {
                         if (tweetId) this._processedTweetIds.add(tweetId);
                         log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag);
+                        continue;
+                    }
+                    if (lang === 'en' && !this._isEnglish(tweetData.text)) {
+                        if (tweetId) this._processedTweetIds.add(tweetId);
+                        log.info('⏭ Skip (không phải tiếng Anh)', this.profileTag);
+                        continue;
+                    }
+                    if (lang === 'vi+en' && !this._isVietnamese(tweetData.text) && !this._isEnglish(tweetData.text)) {
+                        if (tweetId) this._processedTweetIds.add(tweetId);
+                        log.info('⏭ Skip (không phải tiếng Việt/Anh)', this.profileTag);
                         continue;
                     }
 
@@ -279,6 +301,17 @@ class Farmer {
         if (!text || text.trim().length < 5) return false;
         const viPattern = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ]/;
         return viPattern.test(text);
+    }
+
+    // ─── Detect tiếng Anh (không có ký tự đặc biệt phi Latin) ─────────
+    _isEnglish(text) {
+        if (!text || text.trim().length < 5) return false;
+        if (this._isVietnamese(text)) return false;
+        // Phải có ít nhất 60% ký tự Latin a-z
+        const letters = text.replace(/[^a-zA-ZÀ-ɏ]/g, '');
+        const latin = text.replace(/[^a-zA-Z]/g, '');
+        if (letters.length === 0) return false;
+        return (latin.length / letters.length) >= 0.6;
     }
 
     // ─── Follow người đăng bài qua hover card ────────────────────────

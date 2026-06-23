@@ -77,10 +77,22 @@ router.put('/farming', (req, res) => {
         const arrayFields = ['hashtags'];
 
         for (const field of intFields) {
-            if (update[field] !== undefined) config.farming[field] = parseInt(update[field]);
+            if (update[field] !== undefined) {
+                const raw = String(update[field]);
+                if (raw.includes(',')) return res.status(400).json({ error: `${field}: dùng dấu chấm thay vì dấu phẩy (ví dụ: 15 thay vì 15,5)` });
+                const val = parseInt(raw);
+                if (isNaN(val)) return res.status(400).json({ error: `${field}: giá trị không hợp lệ` });
+                config.farming[field] = val;
+            }
         }
         for (const field of floatFields) {
-            if (update[field] !== undefined) config.farming[field] = parseFloat(update[field]);
+            if (update[field] !== undefined) {
+                const raw = String(update[field]);
+                if (raw.includes(',')) return res.status(400).json({ error: `${field}: dùng dấu chấm thay vì dấu phẩy (ví dụ: 0.35 thay vì 0,35)` });
+                const val = parseFloat(raw);
+                if (isNaN(val)) return res.status(400).json({ error: `${field}: giá trị không hợp lệ` });
+                config.farming[field] = val;
+            }
         }
         for (const field of stringFields) {
             if (update[field] !== undefined) config.farming[field] = update[field];
