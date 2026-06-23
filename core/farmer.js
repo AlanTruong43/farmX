@@ -323,14 +323,28 @@ class Farmer {
             await avatar.hover();
             await randomDelay(1200, 2000);
 
-            // Chờ hover card xuất hiện
-            const hoverCard = await this.page.waitForSelector(
+            // Chờ hover card xuất hiện (5s)
+            let hoverCard = await this.page.waitForSelector(
                 '[data-testid="HoverCard"]',
                 { visible: true, timeout: 5000 }
             ).catch(() => null);
 
+            // Nếu không thấy hover card (avt bị che) — scroll lên nhẹ rồi thử lại
             if (!hoverCard) {
-                log.debug('Hover card không xuất hiện', this.profileTag);
+                log.debug('Hover card không xuất hiện, nhích lên thử lại...', this.profileTag);
+                await this.page.mouse.move(400, 400);
+                await this.page.evaluate(() => window.scrollBy(0, -120));
+                await randomDelay(800, 1200);
+                await avatar.hover().catch(() => {});
+                await randomDelay(1500, 2500);
+                hoverCard = await this.page.waitForSelector(
+                    '[data-testid="HoverCard"]',
+                    { visible: true, timeout: 5000 }
+                ).catch(() => null);
+            }
+
+            if (!hoverCard) {
+                log.debug('Hover card vẫn không xuất hiện sau retry, bỏ qua follow', this.profileTag);
                 await this.page.mouse.move(400, 400);
                 return false;
             }
