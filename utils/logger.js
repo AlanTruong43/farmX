@@ -29,7 +29,7 @@ function formatProfileTag(profileTag) {
     return profileTag ? chalk.cyan(`[${profileTag}]`) : '';
 }
 
-function pushToState(level, msg, profileTag) {
+function pushToState(level, msg, profileTag, loopNum) {
     const state = getState();
     if (state) {
         state.pushLog({
@@ -37,45 +37,46 @@ function pushToState(level, msg, profileTag) {
             level,
             message: msg,
             profileTag: profileTag || '',
+            loop: loopNum || null,
         });
     }
 }
 
-function debug(msg, profileTag = '') {
-    pushToState('DEBUG', msg, profileTag);
+function debug(msg, profileTag = '', loop = null) {
+    pushToState('DEBUG', msg, profileTag, loop);
     if (currentLevel <= LOG_LEVELS.DEBUG) {
         console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.gray(msg)}`);
     }
 }
 
-function info(msg, profileTag = '') {
-    pushToState('INFO', msg, profileTag);
+function info(msg, profileTag = '', loop = null) {
+    pushToState('INFO', msg, profileTag, loop);
     if (currentLevel <= LOG_LEVELS.INFO) {
         console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.white(msg)}`);
     }
 }
 
-function warn(msg, profileTag = '') {
-    pushToState('WARN', msg, profileTag);
+function warn(msg, profileTag = '', loop = null) {
+    pushToState('WARN', msg, profileTag, loop);
     if (currentLevel <= LOG_LEVELS.WARN) {
         console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.yellow('⚠')} ${chalk.yellow(msg)}`);
     }
 }
 
-function error(msg, profileTag = '') {
-    pushToState('ERROR', msg, profileTag);
+function error(msg, profileTag = '', loop = null) {
+    pushToState('ERROR', msg, profileTag, loop);
     if (currentLevel <= LOG_LEVELS.ERROR) {
         console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.red('✖')} ${chalk.red(msg)}`);
     }
 }
 
-function success(msg, profileTag = '') {
-    pushToState('SUCCESS', msg, profileTag);
+function success(msg, profileTag = '', loop = null) {
+    pushToState('SUCCESS', msg, profileTag, loop);
     console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.green('✔')} ${chalk.green(msg)}`);
 }
 
-function action(msg, profileTag = '') {
-    pushToState('ACTION', msg, profileTag);
+function action(msg, profileTag = '', loop = null) {
+    pushToState('ACTION', msg, profileTag, loop);
     console.log(`${chalk.gray(timestamp())} ${formatProfileTag(profileTag)} ${chalk.magenta('▸')} ${chalk.magenta(msg)}`);
 }
 

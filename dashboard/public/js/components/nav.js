@@ -9,14 +9,12 @@ const sections = [
             { hash: '#dashboard',  icon: '⚡', label: 'Dashboard' },
             { hash: '#profiles',   icon: '👤', label: 'X Profiles' },
             { hash: '#farming',    icon: '🌾', label: 'Farming Config' },
-            { hash: '#ai',         icon: '🤖', label: 'AI Config' },
         ],
     },
     {
         title: 'System',
         routes: [
-            { hash: '#general', icon: '⚙', label: 'General Config' },
-            { hash: '#logs',    icon: '📋', label: 'Logs' },
+            { hash: '#general', icon: '⚙', label: 'General & AI Config' },
         ],
     },
 ];

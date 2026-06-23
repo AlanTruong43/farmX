@@ -11,7 +11,10 @@ let _onStats = null;
 let _onFarmingStatus = null;
 let _onLog = null;
 let _logEntries = [];
-const MAX_LOG = 100;
+const MAX_LOG = 500;
+let _activeLevel = 'ALL';
+let _activeProfile = 'ALL';
+let _activeLoop = 'ALL';
 
 export function render() {
     return `
@@ -72,7 +75,25 @@ export function render() {
                 <h3>Logs</h3>
                 <button class="btn btn-sm" id="dash-log-clear">Clear</button>
             </div>
-            <div class="log-viewer" id="dash-log-viewer" style="height:260px"></div>
+            <div class="log-filters">
+                <span style="color:var(--text-muted);font-size:11px;margin-right:4px">Level:</span>
+                <button class="chip active" data-loglevel="ALL">All</button>
+                <button class="chip" data-loglevel="INFO">Info</button>
+                <button class="chip" data-loglevel="SUCCESS">Success</button>
+                <button class="chip" data-loglevel="WARN">Warn</button>
+                <button class="chip" data-loglevel="ERROR">Error</button>
+                <button class="chip" data-loglevel="ACTION">Action</button>
+                <button class="chip" data-loglevel="DEBUG">Debug</button>
+                <span style="color:var(--text-muted);font-size:11px;margin-left:12px;margin-right:4px">Profile:</span>
+                <select class="form-control" id="dash-log-profile" style="width:120px;padding:3px 8px;font-size:11px">
+                    <option value="ALL">Tất cả</option>
+                </select>
+                <span style="color:var(--text-muted);font-size:11px;margin-left:8px;margin-right:4px">Loop:</span>
+                <select class="form-control" id="dash-log-loop" style="width:90px;padding:3px 8px;font-size:11px">
+                    <option value="ALL">Tất cả</option>
+                </select>
+            </div>
+            <div class="log-viewer" id="dash-log-viewer" style="height:320px"></div>
         </div>
     `;
 }
@@ -82,8 +103,29 @@ export async function init() {
     document.getElementById('btn-stop').addEventListener('click', handleStop);
     document.getElementById('dash-log-clear').addEventListener('click', () => {
         _logEntries = [];
-        const v = document.getElementById('dash-log-viewer');
-        if (v) v.innerHTML = '';
+        renderDashLogs();
+    });
+
+    // Level chips
+    document.querySelectorAll('.chip[data-loglevel]').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.chip[data-loglevel]').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            _activeLevel = chip.dataset.loglevel;
+            renderDashLogs();
+        });
+    });
+
+    // Profile filter
+    document.getElementById('dash-log-profile').addEventListener('change', e => {
+        _activeProfile = e.target.value;
+        renderDashLogs();
+    });
+
+    // Loop filter
+    document.getElementById('dash-log-loop').addEventListener('change', e => {
+        _activeLoop = e.target.value;
+        renderDashLogs();
     });
 
     // SSE listeners
@@ -109,7 +151,9 @@ export async function init() {
     _onLog = (entry) => {
         _logEntries.push(entry);
         if (_logEntries.length > MAX_LOG) _logEntries.shift();
-        appendDashLog(entry);
+        _addProfileOption(entry.profileTag);
+        _addLoopOption(entry.loop);
+        if (_matchesLogFilter(entry)) appendDashLog(entry);
     };
     on('log', _onLog);
 }
@@ -196,10 +240,17 @@ function updateBanner(data) {
     }
 }
 
+function _matchesLogFilter(entry) {
+    if (_activeLevel !== 'ALL' && entry.level !== _activeLevel) return false;
+    if (_activeProfile !== 'ALL' && entry.profileTag !== _activeProfile) return false;
+    if (_activeLoop !== 'ALL' && String(entry.loop) !== _activeLoop) return false;
+    return true;
+}
+
 function renderDashLogs() {
     const viewer = document.getElementById('dash-log-viewer');
     if (!viewer) return;
-    viewer.innerHTML = _logEntries.map(formatLogEntry).join('');
+    viewer.innerHTML = _logEntries.filter(_matchesLogFilter).map(formatLogEntry).join('');
     viewer.scrollTop = viewer.scrollHeight;
 }
 
@@ -213,13 +264,35 @@ function appendDashLog(entry) {
 function formatLogEntry(entry) {
     const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('vi-VN', { hour12: false }) : '';
     const tag = entry.profileTag ? `[${entry.profileTag}]` : '';
+    const loopLabel = entry.loop ? `[L${entry.loop}]` : '';
     const level = entry.level || 'INFO';
     const msg = escapeHtml(entry.message || '');
-    return `<div class="log-entry level-${level}"><span class="ts">${ts}</span><span class="tag">${tag}</span><span class="msg">${msg}</span></div>`;
+    return `<div class="log-entry level-${level}"><span class="ts">${ts}</span><span class="tag">${tag}${loopLabel}</span><span class="msg">${msg}</span></div>`;
 }
 
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+function _addProfileOption(tag) {
+    if (!tag) return;
+    const sel = document.getElementById('dash-log-profile');
+    if (!sel) return;
+    for (const opt of sel.options) { if (opt.value === tag) return; }
+    const o = document.createElement('option');
+    o.value = tag; o.textContent = tag;
+    sel.appendChild(o);
+}
+
+function _addLoopOption(loop) {
+    if (!loop) return;
+    const sel = document.getElementById('dash-log-loop');
+    if (!sel) return;
+    const val = String(loop);
+    for (const opt of sel.options) { if (opt.value === val) return; }
+    const o = document.createElement('option');
+    o.value = val; o.textContent = `Loop ${val}`;
+    sel.appendChild(o);
 }

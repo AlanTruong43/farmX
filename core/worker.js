@@ -138,6 +138,10 @@ class Worker {
                     // Reload trang trước loop mới
                     if (!this._stopRequested) {
                         log.info('🔄 Reload trang...', this.profileTag);
+                        // Handle browser-level "Reload site?" / beforeunload dialog
+                        this.page.once('dialog', async dialog => {
+                            await dialog.accept().catch(() => {});
+                        });
                         await this.page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 60000 });
                         await randomDelay(2000, 4000);
                     }

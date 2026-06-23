@@ -532,37 +532,46 @@ class Farmer {
     // ─── Dismiss dialog + handle "Discard post?" popup ──────────────
     async _dismissDialog() {
         try {
-            // Escape để đóng reply dialog
             await this.page.keyboard.press('Escape');
-            await sleep(1000);
+            await sleep(800);
 
-            // Check nếu "Discard post?" popup xuất hiện
-            // Twitter dùng button "Discard" trong confirm dialog
-            const discardBtn = await this.page.$('button[data-testid="confirmationSheetConfirm"]');
-            if (discardBtn) {
-                await discardBtn.click();
-                log.debug('Đã click Discard để đóng dialog', this.profileTag);
-                await sleep(800);
-                return;
-            }
-
-            // Fallback: thử tìm nút Discard bằng text
-            const discardByText = await this.page.evaluateHandle(() => {
-                const buttons = document.querySelectorAll('button[role="button"]');
-                for (const btn of buttons) {
-                    if (btn.textContent.trim() === 'Discard') return btn;
+            // Retry tìm Discard tối đa 3 lần
+            for (let attempt = 0; attempt < 3; attempt++) {
+                // Thử selector chính thức trước
+                const discardBtn = await this.page.$('button[data-testid="confirmationSheetConfirm"]');
+                if (discardBtn) {
+                    await discardBtn.click();
+                    log.debug('Đã click Discard để đóng dialog', this.profileTag);
+                    await sleep(800);
+                    return;
                 }
-                return null;
-            });
 
-            if (discardByText && discardByText.asElement()) {
-                await discardByText.asElement().click();
-                log.debug('Đã click Discard (by text) để đóng dialog', this.profileTag);
-                await sleep(800);
-                return;
+                // Fallback: tìm theo text
+                const clicked = await this.page.evaluate(() => {
+                    const buttons = document.querySelectorAll('button[role="button"]');
+                    for (const btn of buttons) {
+                        const t = btn.textContent.trim();
+                        if (t === 'Discard' || t === 'Leave' || t === 'Rời đi') {
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                if (clicked) {
+                    log.debug('Đã click Discard (by text) để đóng dialog', this.profileTag);
+                    await sleep(800);
+                    return;
+                }
+
+                // Chưa thấy dialog — Escape thêm và thử lại
+                if (attempt < 2) {
+                    await this.page.keyboard.press('Escape');
+                    await sleep(600);
+                }
             }
 
-            // Escape thêm lần nữa phòng trường hợp
+            // Escape lần cuối
             await this.page.keyboard.press('Escape');
             await sleep(500);
 

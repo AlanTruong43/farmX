@@ -4,19 +4,15 @@
 import * as nav from './components/nav.js';
 import * as dashboard from './components/dashboard.js';
 import * as profiles from './components/profiles.js';
-import * as aiConfig from './components/ai-config.js';
 import * as generalConfig from './components/general-config.js';
 import * as farmingConfig from './components/farming-config.js';
-import * as logs from './components/logs.js';
 import { connect as sseConnect } from './sse.js';
 
 const routes = {
     '#dashboard':   dashboard,
     '#profiles':    profiles,
-    '#ai':          aiConfig,
-    '#general':     generalConfig,
     '#farming':     farmingConfig,
-    '#logs':        logs,
+    '#general':     generalConfig,
 };
 
 let currentRoute = null;
