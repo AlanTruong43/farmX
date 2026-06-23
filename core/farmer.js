@@ -170,10 +170,11 @@ class Farmer {
 
                     processedCount++;
                     const shouldInteract = Math.random() < this.interactProbability;
-                    log.info(
-                        `[${processedCount}/${this.maxTweetsPerLoop}] ${shouldInteract ? '→ Tương tác' : '→ Bỏ qua'} | "${(tweetData.text || '').substring(0, 50)}..."`,
-                        this.profileTag
-                    );
+                    if (shouldInteract) {
+                        log.info(`→ Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                    } else {
+                        log.info(`→ Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                    }
 
                     // Pre-fetch AI comment song song với các actions khác
                     let commentPromise = null;
