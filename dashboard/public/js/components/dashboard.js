@@ -9,6 +9,9 @@ import { setText, getBadge } from '../utils.js';
 
 let _onStats = null;
 let _onFarmingStatus = null;
+let _onLog = null;
+let _logEntries = [];
+const MAX_LOG = 100;
 
 export function render() {
     return `
@@ -63,12 +66,25 @@ export function render() {
                 <span class="text-muted">Không có profile nào đang chạy</span>
             </div>
         </div>
+
+        <div class="card">
+            <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+                <h3>Logs</h3>
+                <button class="btn btn-sm" id="dash-log-clear">Clear</button>
+            </div>
+            <div class="log-viewer" id="dash-log-viewer" style="height:260px"></div>
+        </div>
     `;
 }
 
-export function init() {
+export async function init() {
     document.getElementById('btn-start').addEventListener('click', handleStart);
     document.getElementById('btn-stop').addEventListener('click', handleStop);
+    document.getElementById('dash-log-clear').addEventListener('click', () => {
+        _logEntries = [];
+        const v = document.getElementById('dash-log-viewer');
+        if (v) v.innerHTML = '';
+    });
 
     // SSE listeners
     _onStats = updateStats;
@@ -81,11 +97,27 @@ export function init() {
     api.getStatus().then(data => {
         updateStats(data);
     }).catch(() => {});
+
+    // Load log history
+    try {
+        const history = await api.getLogHistory();
+        _logEntries = history.slice(-MAX_LOG);
+        renderDashLogs();
+    } catch { /* ignore */ }
+
+    // Live logs
+    _onLog = (entry) => {
+        _logEntries.push(entry);
+        if (_logEntries.length > MAX_LOG) _logEntries.shift();
+        appendDashLog(entry);
+    };
+    on('log', _onLog);
 }
 
 export function destroy() {
     if (_onStats) { off('stats', _onStats); _onStats = null; }
     if (_onFarmingStatus) { off('farming-status', _onFarmingStatus); _onFarmingStatus = null; }
+    if (_onLog) { off('log', _onLog); _onLog = null; }
 }
 
 async function handleStart() {
@@ -162,4 +194,32 @@ function updateBanner(data) {
         banner.className = 'farming-banner inactive';
         banner.innerHTML = '<span>X Farming chưa bắt đầu</span>';
     }
+}
+
+function renderDashLogs() {
+    const viewer = document.getElementById('dash-log-viewer');
+    if (!viewer) return;
+    viewer.innerHTML = _logEntries.map(formatLogEntry).join('');
+    viewer.scrollTop = viewer.scrollHeight;
+}
+
+function appendDashLog(entry) {
+    const viewer = document.getElementById('dash-log-viewer');
+    if (!viewer) return;
+    viewer.insertAdjacentHTML('beforeend', formatLogEntry(entry));
+    viewer.scrollTop = viewer.scrollHeight;
+}
+
+function formatLogEntry(entry) {
+    const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('vi-VN', { hour12: false }) : '';
+    const tag = entry.profileTag ? `[${entry.profileTag}]` : '';
+    const level = entry.level || 'INFO';
+    const msg = escapeHtml(entry.message || '');
+    return `<div class="log-entry level-${level}"><span class="ts">${ts}</span><span class="tag">${tag}</span><span class="msg">${msg}</span></div>`;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }

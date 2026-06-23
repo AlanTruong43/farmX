@@ -112,6 +112,8 @@ class Worker {
                     totalLoops: loopCount,
                 });
 
+                farmer.setLoop(loop, loopCount);
+
                 let loopStats;
                 if (mode === 'hashtag' && hashtags.length > 0) {
                     const hashtag = hashtags[Math.floor(Math.random() * hashtags.length)];

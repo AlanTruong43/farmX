@@ -20,13 +20,24 @@ class Farmer {
         // Farming settings
         this.interactProbability = this.farming.interact_probability ?? 0.1;
         this.maxTweetsPerLoop = this.farming.max_tweets_per_loop ?? 10;
+        this.maxInteractsPerLoop = this.farming.max_interacts_per_loop ?? 0; // 0 = không giới hạn
         this.scrollDuration = this.farming.scroll_duration_seconds ?? 15;
         this.minActionDelay = this.farming.min_delay_between_actions_ms ?? 3000;
         this.maxActionDelay = this.farming.max_delay_between_actions_ms ?? 8000;
         this.languageFilter = this.farming.language_filter || '';
 
+        // Loop tracking
+        this._currentLoop = 1;
+        this._totalLoops = 1;
+
         // Track tweets đã xử lý (tránh xử lý lại sau scroll)
         this._processedTweetIds = new Set();
+    }
+
+    // ─── Set loop context (gọi từ worker trước mỗi loop) ────────────
+    setLoop(current, total) {
+        this._currentLoop = current;
+        this._totalLoops = total;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -108,8 +119,10 @@ class Farmer {
         let likedCount = 0;
         let commentedCount = 0;
         let followedCount = 0;
+        let interactedCount = 0;
         const likedUrls = [];
         const commentedUrls = [];
+        const loopTag = `Loop ${this._currentLoop}/${this._totalLoops}`;
         this._processedTweetIds.clear();
 
         // Scroll lên đầu page trước
@@ -189,17 +202,25 @@ class Farmer {
                             return !!el.querySelector('[style="color: rgb(255, 255, 255); text-overflow: ellipsis;"]');
                         }).catch(() => false);
                         if (isAd) {
-                            log.info(`→ Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop} (quảng cáo)`, this.profileTag);
+                            log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop} (quảng cáo)`, this.profileTag);
                             continue;
                         }
-                        log.info(`→ Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                        log.info(`[${loopTag}] → Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
                     } else {
-                        log.info(`→ Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                        log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                    }
+
+                    // Kiểm tra giới hạn tương tác
+                    const maxInteracts = this.maxInteractsPerLoop;
+                    const overLimit = maxInteracts > 0 && interactedCount >= maxInteracts;
+                    const doActions = shouldInteract && !overLimit;
+                    if (shouldInteract && overLimit) {
+                        log.info(`[${loopTag}] → Đã đạt giới hạn ${maxInteracts} tương tác, lướt tiếp`, this.profileTag);
                     }
 
                     // Pre-fetch AI comment song song với các actions khác
                     let commentPromise = null;
-                    if (shouldInteract) {
+                    if (doActions) {
                         log.debug('Pre-fetch AI comment...', this.profileTag);
                         commentPromise = this.ai.generateComment(tweetData, this.profileTag)
                             .catch(err => {
@@ -209,7 +230,7 @@ class Farmer {
                     }
 
                     // Like
-                    if (shouldInteract) {
+                    if (doActions) {
                         const liked = await this._likeTweet(tweet);
                         if (liked) {
                             likedCount++;
@@ -219,7 +240,7 @@ class Farmer {
                     }
 
                     // Follow
-                    if (shouldInteract) {
+                    if (doActions) {
                         const followed = await this._followUser(tweet);
                         if (followed) {
                             followedCount++;
@@ -239,6 +260,8 @@ class Farmer {
                             }
                         }
                     }
+
+                    if (shouldInteract && !overLimit) interactedCount++;
 
                 } catch (err) {
                     log.debug(`Bỏ qua tweet: ${err.message}`, this.profileTag);

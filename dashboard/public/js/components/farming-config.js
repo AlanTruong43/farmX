@@ -40,6 +40,13 @@ export function render() {
                         <input type="number" class="form-control" id="f-interact-prob" min="0" max="1" step="0.05">
                     </div>
                     <div class="form-group">
+                        <label>Max tương tác/loop (0 = không giới hạn)</label>
+                        <input type="number" class="form-control" id="f-max-interacts" min="0">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
                         <label>Language filter</label>
                         <select class="form-control" id="f-lang-filter">
                             <option value="">Tất cả ngôn ngữ</option>
@@ -98,6 +105,7 @@ export async function init() {
         setVal('f-loops', f.loop_count || 3);
         setVal('f-hashtags', (f.hashtags || []).join(', '));
         setVal('f-interact-prob', f.interact_probability ?? 0.1);
+        setVal('f-max-interacts', f.max_interacts_per_loop ?? 0);
         setVal('f-lang-filter', f.language_filter || '');
         setVal('f-scroll', f.scroll_duration_seconds || 15);
         setVal('f-max-tweets', f.max_tweets_per_loop || 10);
@@ -135,6 +143,7 @@ async function handleSave(e) {
             loop_count: getVal('f-loops'),
             hashtags: getVal('f-hashtags'),
             interact_probability: getVal('f-interact-prob'),
+            max_interacts_per_loop: getVal('f-max-interacts'),
             language_filter: getVal('f-lang-filter'),
             scroll_duration_seconds: getVal('f-scroll'),
             max_tweets_per_loop: getVal('f-max-tweets'),

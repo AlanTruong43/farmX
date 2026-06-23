@@ -69,6 +69,7 @@ router.put('/farming', (req, res) => {
         // Merge fields
         const intFields = [
             'loop_count', 'scroll_duration_seconds', 'max_tweets_per_loop',
+            'max_interacts_per_loop',
             'min_delay_between_actions_ms', 'max_delay_between_actions_ms',
             'min_delay_between_loops_ms', 'max_delay_between_loops_ms',
         ];
