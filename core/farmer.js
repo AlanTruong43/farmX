@@ -136,7 +136,7 @@ class Farmer {
             const tweets = await this.page.$$(selectors.feed.tweetArticle);
 
             if (tweets.length === 0) {
-                log.debug('Không tìm thấy tweet nào, scroll thêm...', this.profileTag);
+                log.debug('Không tìm thấy tweet nào, scroll thêm...', this.profileTag, this._currentLoop);
                 await humanScroll(this.page, { scrolls: 3 });
                 await randomDelay(2000, 4000);
                 continue;
@@ -170,17 +170,17 @@ class Farmer {
                     const lang = this.languageFilter;
                     if (lang === 'vi' && !this._isVietnamese(tweetData.text)) {
                         if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag);
+                        log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag, this._currentLoop);
                         continue;
                     }
                     if (lang === 'en' && !this._isEnglish(tweetData.text)) {
                         if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Anh)', this.profileTag);
+                        log.info('⏭ Skip (không phải tiếng Anh)', this.profileTag, this._currentLoop);
                         continue;
                     }
                     if (lang === 'vi+en' && !this._isVietnamese(tweetData.text) && !this._isEnglish(tweetData.text)) {
                         if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Việt/Anh)', this.profileTag);
+                        log.info('⏭ Skip (không phải tiếng Việt/Anh)', this.profileTag, this._currentLoop);
                         continue;
                     }
 
@@ -202,12 +202,12 @@ class Farmer {
                             return !!el.querySelector('[style="color: rgb(255, 255, 255); text-overflow: ellipsis;"]');
                         }).catch(() => false);
                         if (isAd) {
-                            log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop} (quảng cáo)`, this.profileTag);
+                            log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop} (quảng cáo)`, this.profileTag, this._currentLoop);
                             continue;
                         }
-                        log.info(`[${loopTag}] → Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                        log.info(`[${loopTag}] → Đang xử lý bài viết thứ ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag, this._currentLoop);
                     } else {
-                        log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag);
+                        log.info(`[${loopTag}] → Bỏ qua bài viết ${processedCount}/${this.maxTweetsPerLoop}`, this.profileTag, this._currentLoop);
                     }
 
                     // Kiểm tra giới hạn tương tác
@@ -215,7 +215,7 @@ class Farmer {
                     const overLimit = maxInteracts > 0 && interactedCount >= maxInteracts;
                     const doActions = shouldInteract && !overLimit;
                     if (shouldInteract && overLimit) {
-                        log.info(`[${loopTag}] → Đã đạt giới hạn ${maxInteracts} tương tác, lướt tiếp`, this.profileTag);
+                        log.info(`[${loopTag}] → Đã đạt giới hạn ${maxInteracts} tương tác, lướt tiếp`, this.profileTag, this._currentLoop);
                     }
 
                     // Pre-fetch AI comment song song với các actions khác
@@ -275,7 +275,8 @@ class Farmer {
 
         log.success(
             `Kết quả: ${processedCount} tweets xử lý | ${likedCount} liked | ${followedCount} followed | ${commentedCount} commented`,
-            this.profileTag
+            this.profileTag,
+            this._currentLoop
         );
 
         return { processedCount, likedCount, commentedCount, followedCount, likedUrls, commentedUrls };
@@ -310,10 +311,10 @@ class Farmer {
             const likeBtn = await tweetElement.$(selectors.tweet.likeBtn);
             if (!likeBtn) return false;
             await likeBtn.click();
-            log.success('❤️  Liked', this.profileTag);
+            log.success('❤️  Liked', this.profileTag, this._currentLoop);
             return true;
         } catch (err) {
-            log.debug(`Like lỗi: ${err.message}`, this.profileTag);
+            log.debug(`Like lỗi: ${err.message}`, this.profileTag, this._currentLoop);
             return false;
         }
     }
@@ -354,7 +355,7 @@ class Farmer {
 
             // Nếu không thấy hover card (avt bị che) — scroll lên nhẹ rồi thử lại
             if (!hoverCard) {
-                log.debug('Hover card không xuất hiện, nhích lên thử lại...', this.profileTag);
+                log.debug('Hover card không xuất hiện, nhích lên thử lại...', this.profileTag, this._currentLoop);
                 await this.page.mouse.move(400, 400);
                 await this.page.evaluate(() => window.scrollBy(0, -120));
                 await randomDelay(800, 1200);
@@ -367,7 +368,7 @@ class Farmer {
             }
 
             if (!hoverCard) {
-                log.debug('Hover card vẫn không xuất hiện sau retry, bỏ qua follow', this.profileTag);
+                log.debug('Hover card vẫn không xuất hiện sau retry, bỏ qua follow', this.profileTag, this._currentLoop);
                 await this.page.mouse.move(400, 400);
                 return false;
             }
@@ -409,7 +410,7 @@ class Farmer {
 
             if (clicked) {
                 await randomDelay(800, 1500);
-                log.success('➕ Followed', this.profileTag);
+                log.success('➕ Followed', this.profileTag, this._currentLoop);
                 await this.page.mouse.move(400, 400);
                 await randomDelay(400, 700);
                 return true;
@@ -418,7 +419,7 @@ class Farmer {
             await this.page.mouse.move(400, 400);
             return false;
         } catch (err) {
-            log.debug(`Follow lỗi: ${err.message}`, this.profileTag);
+            log.debug(`Follow lỗi: ${err.message}`, this.profileTag, this._currentLoop);
             await this.page.mouse.move(400, 400).catch(() => {});
             return false;
         }
@@ -460,7 +461,7 @@ class Farmer {
             ).catch(() => null);
 
             if (!textArea) {
-                log.debug('Không tìm thấy ô nhập reply', this.profileTag);
+                log.debug('Không tìm thấy ô nhập reply', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
                 return false;
             }
@@ -476,7 +477,7 @@ class Farmer {
             // Submit
             const submitBtn = await this.page.$(selectors.reply.replySubmitBtn);
             if (!submitBtn) {
-                log.debug('Không tìm thấy nút Reply submit', this.profileTag);
+                log.debug('Không tìm thấy nút Reply submit', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
                 return false;
             }
@@ -487,21 +488,21 @@ class Farmer {
             const submitted = await this._waitForDialogClose(6000);
             if (submitted) {
                 await sleep(1000);
-                log.success(`💬 Commented: "${commentText.substring(0, 50)}..."`, this.profileTag);
+                log.success(`💬 Commented: "${commentText.substring(0, 50)}..."`, this.profileTag, this._currentLoop);
                 return true;
             }
 
             // Submit có thể đang pending — đợi thêm
-            log.debug('Reply dialog chưa đóng, đợi thêm...', this.profileTag);
+            log.debug('Reply dialog chưa đóng, đợi thêm...', this.profileTag, this._currentLoop);
             const submitted2 = await this._waitForDialogClose(5000);
             if (submitted2) {
                 await sleep(1000);
-                log.success(`💬 Commented (chậm): "${commentText.substring(0, 50)}..."`, this.profileTag);
+                log.success(`💬 Commented (chậm): "${commentText.substring(0, 50)}..."`, this.profileTag, this._currentLoop);
                 return true;
             }
 
             // Vẫn không đóng — dismiss
-            log.warn('Reply submit timeout, đóng dialog', this.profileTag);
+            log.warn('Reply submit timeout, đóng dialog', this.profileTag, this._currentLoop);
             await this._dismissDialog();
             return false;
 

@@ -133,16 +133,23 @@ class Worker {
                     const maxLoopDelay = this.farming.max_delay_between_loops_ms || 60000;
                     const waitMs = Math.floor(Math.random() * (maxLoopDelay - minLoopDelay + 1)) + minLoopDelay;
                     log.info(`☕ Nghỉ giải lao ${(waitMs / 1000).toFixed(0)}s trước loop ${loop + 1}/${loopCount}...`, this.profileTag);
-                    await sleep(waitMs);
+
+                    // Interruptible sleep — kiểm tra _stopRequested mỗi 500ms
+                    const tick = 500;
+                    let elapsed = 0;
+                    while (elapsed < waitMs && !this._stopRequested) {
+                        await sleep(Math.min(tick, waitMs - elapsed));
+                        elapsed += tick;
+                    }
 
                     // Reload trang trước loop mới
                     if (!this._stopRequested) {
                         log.info('🔄 Reload trang...', this.profileTag);
-                        // Handle browser-level "Reload site?" / beforeunload dialog
                         this.page.once('dialog', async dialog => {
                             await dialog.accept().catch(() => {});
                         });
-                        await this.page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 60000 });
+                        // domcontentloaded thay vì networkidle2 — X load liên tục nên networkidle2 treo
+                        await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
                         await randomDelay(2000, 4000);
                     }
                 }

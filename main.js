@@ -180,14 +180,13 @@ function cmdServer(options) {
     const { createServer } = require('./dashboard/server');
     createServer(port);
 
-    // Graceful shutdown — Ctrl+C dừng farming trước khi thoát
+    // Graceful shutdown — Ctrl+C dừng farming, không kill server
     const appState = require('./core/state');
     process.on('SIGINT', () => {
         if (appState._pool && appState.farmingActive) {
-            log.warn('Đang dừng farming trước khi thoát...');
+            log.warn('Đang dừng farming...');
             appState._pool.stopAll();
         }
-        setTimeout(() => process.exit(0), 1500);
     });
 }
 
