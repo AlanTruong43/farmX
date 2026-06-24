@@ -38,6 +38,8 @@ export const api = {
     enableAllProfiles:  ()          => request('PUT', '/api/profiles/enable-all'),
     disableAllProfiles: ()          => request('PUT', '/api/profiles/disable-all'),
     deleteAllProfiles:  ()          => request('DELETE', '/api/profiles/all'),
+    saveProfileFarming: (id, body)  => request('PUT', `/api/profiles/${id}/farming`, body),
+    resetProfileFarming:(id)        => request('DELETE', `/api/profiles/${id}/farming`),
 
     startFarming:   ()          => request('POST', '/api/farming/start'),
     stopFarming:    ()          => request('POST', '/api/farming/stop'),

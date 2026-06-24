@@ -46,7 +46,7 @@ class Farmer {
     async farmNewsfeed() {
         log.action('🌾 Chế độ NEWSFEED — lướt feed, like & comment', this.profileTag);
 
-        await this.page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 30000 });
+        await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await randomDelay(3000, 5000);
 
         // Scroll warm-up trước
@@ -472,7 +472,35 @@ class Farmer {
             await this.page.keyboard.type(commentText, {
                 delay: Math.floor(Math.random() * 80) + 30
             });
-            await randomDelay(1000, 2000);
+            await randomDelay(800, 1500);
+
+            // Kiểm tra vượt giới hạn ký tự (indicator xuất hiện khi gần/quá 280 chars)
+            const overLimit = await this.page.evaluate(() => {
+                const el = document.querySelector('[data-testid="dual-phase-countdown-circle-text"]');
+                if (!el) return false;
+                const count = parseInt(el.textContent.trim(), 10);
+                return !isNaN(count) && count < 0;
+            }).catch(() => false);
+
+            if (overLimit) {
+                log.debug('Comment vượt giới hạn ký tự, cắt ngắn và gõ lại...', this.profileTag, this._currentLoop);
+                // Xóa toàn bộ text hiện tại
+                await textArea.click();
+                await sleep(200);
+                await this.page.keyboard.down('Control');
+                await this.page.keyboard.press('a');
+                await this.page.keyboard.up('Control');
+                await this.page.keyboard.press('Backspace');
+                await sleep(300);
+                // Gõ lại bản đã cắt (tối đa 270 ký tự để có buffer)
+                const truncated = commentText.substring(0, 270);
+                await this.page.keyboard.type(truncated, {
+                    delay: Math.floor(Math.random() * 60) + 20
+                });
+                await randomDelay(800, 1500);
+            }
+
+            await randomDelay(500, 1000);
 
             // Submit
             const submitBtn = await this.page.$(selectors.reply.replySubmitBtn);

@@ -65,7 +65,7 @@ class Worker {
 
             // 3. Vào X.com
             log.info('Đang vào x.com...', this.profileTag);
-            await this.page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 60000 });
+            await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
             await randomDelay(3000, 5000);
 
             // Bypass SSL/proxy warning nếu có

@@ -83,7 +83,17 @@ class WorkerPool {
             const profile = enabledProfiles[idx];
             log.info(`▶ [${idx + 1}/${enabledProfiles.length}] Khởi động: ${profile.username || profile.genlogin_id}`);
 
-            const worker = new Worker(profile, this.config);
+            // Merge per-profile farming override nếu có
+            let workerConfig = this.config;
+            if (profile.farming && Object.keys(profile.farming).length > 0) {
+                workerConfig = {
+                    ...this.config,
+                    farming: { ...this.config.farming, ...profile.farming },
+                };
+                log.debug(`Profile dùng farming config riêng`, profile.username || profile.genlogin_id);
+            }
+
+            const worker = new Worker(profile, workerConfig);
             this.activeWorkers.add(worker);
 
             const workerPromise = (async () => {

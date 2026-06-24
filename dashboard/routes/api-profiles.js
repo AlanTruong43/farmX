@@ -120,6 +120,38 @@ router.post('/import', (req, res) => {
 
 // ─── Parameterized routes SAU bulk routes ───────────────
 
+// PUT /api/profiles/:id/farming — lưu cấu hình farming riêng cho profile
+router.put('/:id/farming', (req, res) => {
+    try {
+        const data = readProfiles();
+        const targetId = req.params.id;
+        const profile = data.profiles.find(p => p.genlogin_id.toString() === targetId);
+        if (!profile) return res.status(404).json({ error: `Profile ${targetId} không tìm thấy` });
+
+        profile.farming = req.body || {};
+        writeProfiles(data);
+        res.json({ ok: true, farming: profile.farming });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/profiles/:id/farming — reset về cấu hình mặc định
+router.delete('/:id/farming', (req, res) => {
+    try {
+        const data = readProfiles();
+        const targetId = req.params.id;
+        const profile = data.profiles.find(p => p.genlogin_id.toString() === targetId);
+        if (!profile) return res.status(404).json({ error: `Profile ${targetId} không tìm thấy` });
+
+        delete profile.farming;
+        writeProfiles(data);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // PUT /api/profiles/:id/toggle
 router.put('/:id/toggle', (req, res) => {
     try {
