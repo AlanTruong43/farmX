@@ -17,7 +17,7 @@ export function render() {
                     <label>Provider</label>
                     <select class="form-control" id="ai-type">
                         <option value="gemini">Gemini (Google)</option>
-                        <option value="ezai">EzAI (OpenAI-compatible)</option>
+                        <option value="ezai">DEMO (OpenAI-compatible)</option>
                     </select>
                 </div>
 
@@ -29,7 +29,7 @@ export function render() {
                     <div class="form-group">
                         <label>Model</label>
                         <input type="text" class="form-control" id="ai-model" placeholder="gemini-2.0-flash">
-                        <div class="form-hint" id="model-hint">Gemini: gemini-2.0-flash | EzAI: gpt-4.1-nano, gpt-4.1-mini, gpt-4o-mini</div>
+                        <div class="form-hint" id="model-hint">Gemini: gemini-2.0-flash | DEMO: gpt-4.1-nano, gpt-4.1-mini, gpt-4o-mini</div>
                     </div>
                 </div>
 
@@ -70,7 +70,7 @@ export async function init() {
         const type = e.target.value;
         if (hint) {
             hint.textContent = type === 'ezai'
-                ? 'EzAI models: gpt-4.1-nano (rẻ/nhanh), gpt-4.1-mini, gpt-4o-mini, gemini-2.5-pro'
+                ? 'DEMO models: gpt-4.1-nano (rẻ/nhanh), gpt-4.1-mini, gpt-4o-mini, gemini-2.5-pro'
                 : 'Gemini models: gemini-2.0-flash (nhanh), gemini-1.5-pro';
         }
 
