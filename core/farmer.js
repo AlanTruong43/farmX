@@ -489,67 +489,11 @@ class Farmer {
             }).catch(() => false);
 
             if (overLimit) {
-                log.debug('Comment vượt giới hạn ký tự, đóng dialog và cmt lại...', this.profileTag, this._currentLoop);
-
-                // Click nút đóng bài (app-bar-close) → trigger "Save post?" dialog
-                const closeBtn = await this.page.$('[data-testid="app-bar-close"]');
-                if (closeBtn) {
-                    await closeBtn.click();
-                    await sleep(800);
-                }
-
-                // Chọn Discard để huỷ draft
+                log.warn('Comment vượt giới hạn ký tự, bỏ qua và quay về home', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
-                await sleep(600);
-
-                // Quay về home nếu bị redirect
-                await this._ensureOnValidPage();
-
-                // Scroll tweet vào view và click reply lại
-                await tweetElement.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' })).catch(() => {});
-                await sleep(800);
-
-                const replyBtn2 = await tweetElement.$(selectors.tweet.replyBtn);
-                if (!replyBtn2) {
-                    log.debug('Không tìm thấy nút reply khi retry', this.profileTag, this._currentLoop);
-                    return false;
-                }
-                await replyBtn2.click();
-                await randomDelay(1500, 3000);
-
-                const textArea2 = await this.page.waitForSelector(
-                    selectors.reply.textArea,
-                    { visible: true, timeout: 8000 }
-                ).catch(() => null);
-
-                if (!textArea2) {
-                    log.debug('Không tìm thấy ô nhập reply khi retry', this.profileTag, this._currentLoop);
-                    return false;
-                }
-
-                // Gõ lại bản đã cắt (tối đa 270 ký tự)
-                const truncated = commentText.substring(0, 270);
-                await textArea2.click();
-                await sleep(300);
-                await this.page.keyboard.type(truncated, {
-                    delay: Math.floor(Math.random() * 60) + 20
-                });
-                await randomDelay(800, 1500);
-
-                // Submit lại
-                const submitBtn2 = await this.page.$(selectors.reply.replySubmitBtn);
-                if (!submitBtn2) {
-                    await this._dismissDialog();
-                    return false;
-                }
-                await submitBtn2.click();
-                const submitted3 = await this._waitForDialogClose(8000);
-                if (submitted3) {
-                    await sleep(1000);
-                    log.success(`💬 Commented (retry): "${truncated.substring(0, 50)}..."`, this.profileTag, this._currentLoop);
-                    return true;
-                }
-                await this._dismissDialog();
+                await sleep(500);
+                await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await randomDelay(2000, 3500);
                 return false;
             }
 

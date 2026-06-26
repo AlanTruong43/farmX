@@ -142,13 +142,9 @@ class Worker {
                         elapsed += tick;
                     }
 
-                    // Reload trang trước loop mới
+                    // Truy cập x.com/home trước loop mới (không reload — tránh dialog xác nhận)
                     if (!this._stopRequested) {
-                        log.info('🔄 Reload trang...', this.profileTag);
-                        this.page.once('dialog', async dialog => {
-                            await dialog.accept().catch(() => {});
-                        });
-                        // domcontentloaded thay vì networkidle2 — X load liên tục nên networkidle2 treo
+                        log.info('🏠 Quay về home trước loop mới...', this.profileTag);
                         await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
                         await randomDelay(2000, 4000);
                     }
