@@ -489,11 +489,8 @@ class Farmer {
             }).catch(() => false);
 
             if (overLimit) {
-                log.warn('Comment vượt giới hạn ký tự, bỏ qua và quay về home', this.profileTag, this._currentLoop);
-                await this._dismissDialog();
-                await sleep(500);
-                await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 20000 });
-                await randomDelay(2000, 3500);
+                log.warn('Comment vượt giới hạn ký tự, quay về home', this.profileTag, this._currentLoop);
+                await this._gotoHome();
                 return false;
             }
 
@@ -555,16 +552,27 @@ class Farmer {
         return false;
     }
 
+    // ─── Navigate về x.com/home, tự động accept "Leave site?" dialog ─
+    async _gotoHome() {
+        try {
+            this.page.once('dialog', async dialog => {
+                await dialog.accept().catch(() => {});
+            });
+            await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await randomDelay(2000, 3500);
+        } catch {
+            // Ignore
+        }
+    }
+
     // ─── Đảm bảo đang ở trang hợp lệ (home hoặc compose) ───────────
-    // Nếu bị redirect sang trang khác thì quay về home
     async _ensureOnValidPage() {
         try {
             const url = this.page.url();
             const isValid = url.includes('x.com/home') || url.includes('x.com/compose/post');
             if (!isValid) {
                 log.debug(`Đang ở trang lạ (${url}), quay về home...`, this.profileTag);
-                await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 20000 });
-                await randomDelay(2000, 3500);
+                await this._gotoHome();
             }
         } catch {
             // Ignore

@@ -142,9 +142,12 @@ class Worker {
                         elapsed += tick;
                     }
 
-                    // Truy cập x.com/home trước loop mới (không reload — tránh dialog xác nhận)
+                    // Truy cập x.com/home trước loop mới — accept "Leave site?" nếu có
                     if (!this._stopRequested) {
                         log.info('🏠 Quay về home trước loop mới...', this.profileTag);
+                        this.page.once('dialog', async dialog => {
+                            await dialog.accept().catch(() => {});
+                        });
                         await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
                         await randomDelay(2000, 4000);
                     }
