@@ -308,6 +308,7 @@ class Farmer {
     // ─── Like tweet ──────────────────────────────────────────────────
     async _likeTweet(tweetElement) {
         try {
+            await this._ensureOnValidPage();
             await this._dismissSaveDialog();
             const likeBtn = await tweetElement.$(selectors.tweet.likeBtn);
             if (!likeBtn) return false;
@@ -341,6 +342,7 @@ class Farmer {
     // ─── Follow người đăng bài qua hover card ────────────────────────
     async _followUser(tweetElement) {
         try {
+            await this._ensureOnValidPage();
             await this._dismissSaveDialog();
             const avatar = await tweetElement.$(selectors.tweet.userAvatar);
             if (!avatar) return false;
@@ -446,6 +448,7 @@ class Farmer {
     // Tách riêng phần UI để dùng với pre-fetched AI text
     async _submitComment(tweetElement, commentText) {
         try {
+            await this._ensureOnValidPage();
             await this._dismissSaveDialog();
             // Click nút reply trên tweet
             const replyBtn = await tweetElement.$(selectors.tweet.replyBtn);
@@ -486,35 +489,68 @@ class Farmer {
             }).catch(() => false);
 
             if (overLimit) {
-                log.debug('Comment vượt giới hạn ký tự, xoá hết và gõ lại...', this.profileTag, this._currentLoop);
-                // Xóa toàn bộ text: Ctrl+A rồi Delete (chắc chắn xoá sạch hơn Backspace)
-                await textArea.click();
-                await sleep(300);
-                await this.page.keyboard.down('Meta'); // Cmd trên Mac
-                await this.page.keyboard.press('a');
-                await this.page.keyboard.up('Meta');
-                await sleep(200);
-                await this.page.keyboard.press('Delete');
-                await sleep(300);
-                // Verify đã xoá sạch chưa — nếu chưa thì dùng Ctrl+A + Delete
-                const stillHasText = await this.page.evaluate(() => {
-                    const el = document.querySelector('[data-testid="tweetTextarea_0"]');
-                    return el ? el.textContent.trim().length > 0 : false;
-                }).catch(() => false);
-                if (stillHasText) {
-                    await this.page.keyboard.down('Control');
-                    await this.page.keyboard.press('a');
-                    await this.page.keyboard.up('Control');
-                    await sleep(200);
-                    await this.page.keyboard.press('Delete');
-                    await sleep(300);
+                log.debug('Comment vượt giới hạn ký tự, đóng dialog và cmt lại...', this.profileTag, this._currentLoop);
+
+                // Click nút đóng bài (app-bar-close) → trigger "Save post?" dialog
+                const closeBtn = await this.page.$('[data-testid="app-bar-close"]');
+                if (closeBtn) {
+                    await closeBtn.click();
+                    await sleep(800);
                 }
-                // Gõ lại bản đã cắt (tối đa 270 ký tự để có buffer)
+
+                // Chọn Discard để huỷ draft
+                await this._dismissDialog();
+                await sleep(600);
+
+                // Quay về home nếu bị redirect
+                await this._ensureOnValidPage();
+
+                // Scroll tweet vào view và click reply lại
+                await tweetElement.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' })).catch(() => {});
+                await sleep(800);
+
+                const replyBtn2 = await tweetElement.$(selectors.tweet.replyBtn);
+                if (!replyBtn2) {
+                    log.debug('Không tìm thấy nút reply khi retry', this.profileTag, this._currentLoop);
+                    return false;
+                }
+                await replyBtn2.click();
+                await randomDelay(1500, 3000);
+
+                const textArea2 = await this.page.waitForSelector(
+                    selectors.reply.textArea,
+                    { visible: true, timeout: 8000 }
+                ).catch(() => null);
+
+                if (!textArea2) {
+                    log.debug('Không tìm thấy ô nhập reply khi retry', this.profileTag, this._currentLoop);
+                    return false;
+                }
+
+                // Gõ lại bản đã cắt (tối đa 270 ký tự)
                 const truncated = commentText.substring(0, 270);
+                await textArea2.click();
+                await sleep(300);
                 await this.page.keyboard.type(truncated, {
                     delay: Math.floor(Math.random() * 60) + 20
                 });
                 await randomDelay(800, 1500);
+
+                // Submit lại
+                const submitBtn2 = await this.page.$(selectors.reply.replySubmitBtn);
+                if (!submitBtn2) {
+                    await this._dismissDialog();
+                    return false;
+                }
+                await submitBtn2.click();
+                const submitted3 = await this._waitForDialogClose(8000);
+                if (submitted3) {
+                    await sleep(1000);
+                    log.success(`💬 Commented (retry): "${truncated.substring(0, 50)}..."`, this.profileTag, this._currentLoop);
+                    return true;
+                }
+                await this._dismissDialog();
+                return false;
             }
 
             await randomDelay(500, 1000);
@@ -573,6 +609,22 @@ class Farmer {
             await sleep(500);
         }
         return false;
+    }
+
+    // ─── Đảm bảo đang ở trang hợp lệ (home hoặc compose) ───────────
+    // Nếu bị redirect sang trang khác thì quay về home
+    async _ensureOnValidPage() {
+        try {
+            const url = this.page.url();
+            const isValid = url.includes('x.com/home') || url.includes('x.com/compose/post');
+            if (!isValid) {
+                log.debug(`Đang ở trang lạ (${url}), quay về home...`, this.profileTag);
+                await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await randomDelay(2000, 3500);
+            }
+        } catch {
+            // Ignore
+        }
     }
 
     // ─── Dismiss "Save post?" dialog nếu đang hiện ──────────────────
