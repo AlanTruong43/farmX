@@ -308,6 +308,7 @@ class Farmer {
     // ─── Like tweet ──────────────────────────────────────────────────
     async _likeTweet(tweetElement) {
         try {
+            await this._dismissSaveDialog();
             const likeBtn = await tweetElement.$(selectors.tweet.likeBtn);
             if (!likeBtn) return false;
             await likeBtn.click();
@@ -340,6 +341,7 @@ class Farmer {
     // ─── Follow người đăng bài qua hover card ────────────────────────
     async _followUser(tweetElement) {
         try {
+            await this._dismissSaveDialog();
             const avatar = await tweetElement.$(selectors.tweet.userAvatar);
             if (!avatar) return false;
 
@@ -444,6 +446,7 @@ class Farmer {
     // Tách riêng phần UI để dùng với pre-fetched AI text
     async _submitComment(tweetElement, commentText) {
         try {
+            await this._dismissSaveDialog();
             // Click nút reply trên tweet
             const replyBtn = await tweetElement.$(selectors.tweet.replyBtn);
             if (!replyBtn) {
@@ -483,15 +486,29 @@ class Farmer {
             }).catch(() => false);
 
             if (overLimit) {
-                log.debug('Comment vượt giới hạn ký tự, cắt ngắn và gõ lại...', this.profileTag, this._currentLoop);
-                // Xóa toàn bộ text hiện tại
+                log.debug('Comment vượt giới hạn ký tự, xoá hết và gõ lại...', this.profileTag, this._currentLoop);
+                // Xóa toàn bộ text: Ctrl+A rồi Delete (chắc chắn xoá sạch hơn Backspace)
                 await textArea.click();
-                await sleep(200);
-                await this.page.keyboard.down('Control');
-                await this.page.keyboard.press('a');
-                await this.page.keyboard.up('Control');
-                await this.page.keyboard.press('Backspace');
                 await sleep(300);
+                await this.page.keyboard.down('Meta'); // Cmd trên Mac
+                await this.page.keyboard.press('a');
+                await this.page.keyboard.up('Meta');
+                await sleep(200);
+                await this.page.keyboard.press('Delete');
+                await sleep(300);
+                // Verify đã xoá sạch chưa — nếu chưa thì dùng Ctrl+A + Delete
+                const stillHasText = await this.page.evaluate(() => {
+                    const el = document.querySelector('[data-testid="tweetTextarea_0"]');
+                    return el ? el.textContent.trim().length > 0 : false;
+                }).catch(() => false);
+                if (stillHasText) {
+                    await this.page.keyboard.down('Control');
+                    await this.page.keyboard.press('a');
+                    await this.page.keyboard.up('Control');
+                    await sleep(200);
+                    await this.page.keyboard.press('Delete');
+                    await sleep(300);
+                }
                 // Gõ lại bản đã cắt (tối đa 270 ký tự để có buffer)
                 const truncated = commentText.substring(0, 270);
                 await this.page.keyboard.type(truncated, {
@@ -556,6 +573,27 @@ class Farmer {
             await sleep(500);
         }
         return false;
+    }
+
+    // ─── Dismiss "Save post?" dialog nếu đang hiện ──────────────────
+    // Phải gọi trước mỗi action để tránh các lỗi phía sau
+    async _dismissSaveDialog() {
+        try {
+            const saveDialog = await this.page.$('[data-testid="confirmationSheetDialog"]');
+            if (!saveDialog) return false;
+
+            // Click Discard (confirmationSheetCancel)
+            const discardBtn = await this.page.$('[data-testid="confirmationSheetCancel"]');
+            if (discardBtn) {
+                await discardBtn.click();
+                await sleep(600);
+                log.debug('Đã dismiss "Save post?" dialog', this.profileTag);
+                return true;
+            }
+            return false;
+        } catch {
+            return false;
+        }
     }
 
     // ─── Dismiss dialog + handle "Discard post?" popup ──────────────
