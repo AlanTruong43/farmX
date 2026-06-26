@@ -10,6 +10,7 @@ const apiConfig = require('./routes/api-config');
 const apiProfiles = require('./routes/api-profiles');
 const apiFarming = require('./routes/api-farming');
 const apiLogs = require('./routes/api-logs');
+const apiFollow = require('./routes/api-follow');
 
 function createServer(port = 3000) {
     const app = express();
@@ -25,6 +26,7 @@ function createServer(port = 3000) {
     app.use('/api/profiles', apiProfiles);
     app.use('/api/farming', apiFarming);
     app.use('/api/logs', apiLogs);
+    app.use('/api/follow', apiFollow);
 
     // SPA fallback
     app.get('/{*splat}', (req, res) => {

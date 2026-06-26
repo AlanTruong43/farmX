@@ -6,13 +6,15 @@ import * as dashboard from './components/dashboard.js';
 import * as profiles from './components/profiles.js';
 import * as generalConfig from './components/general-config.js';
 import * as farmingConfig from './components/farming-config.js';
+import * as followCheck from './components/follow-check.js';
 import { connect as sseConnect } from './sse.js';
 
 const routes = {
-    '#dashboard':   dashboard,
-    '#profiles':    profiles,
-    '#farming':     farmingConfig,
-    '#general':     generalConfig,
+    '#dashboard':     dashboard,
+    '#profiles':      profiles,
+    '#farming':       farmingConfig,
+    '#general':       generalConfig,
+    '#follow-check':  followCheck,
 };
 
 let currentRoute = null;

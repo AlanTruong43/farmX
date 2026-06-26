@@ -12,6 +12,12 @@ const sections = [
         ],
     },
     {
+        title: 'Tools',
+        routes: [
+            { hash: '#follow-check', icon: '👥', label: 'Follow Check' },
+        ],
+    },
+    {
         title: 'System',
         routes: [
             { hash: '#general', icon: '⚙', label: 'General & AI Config' },
