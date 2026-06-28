@@ -132,6 +132,9 @@ class Farmer {
         for (let i = 0; i < this.maxTweetsPerLoop + 5; i++) {
             if (processedCount >= this.maxTweetsPerLoop) break;
 
+            // Nếu bị redirect sang trang lạ → quay về home ngay
+            await this._ensureOnValidPage();
+
             // Tìm tất cả tweet articles trên page
             const tweets = await this.page.$$(selectors.feed.tweetArticle);
 
