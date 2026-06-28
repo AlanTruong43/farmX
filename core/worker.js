@@ -89,6 +89,12 @@ class Worker {
 
             log.success('Đã đăng nhập X ✓', this.profileTag);
 
+            // Lấy username X từ profile link
+            this.xUsername = await this.page.$eval(
+                '[data-testid="AppTabBar_Profile_Link"]',
+                el => (el.getAttribute('href') || '').replace('/', '').split('?')[0]
+            ).catch(() => this.profileTag);
+
             // 4. Pre-init SheetsReporter đã bị xóa
 
             // 5. Farming loop
@@ -111,6 +117,15 @@ class Worker {
                     currentLoop: loop,
                     totalLoops: loopCount,
                 });
+
+                // Shadow ban check trước mỗi loop
+                const banStatus = await this._checkShadowBan(this.xUsername);
+                if (banStatus === 'ghost_ban') {
+                    log.warn('🚫 Bị ghost ban! Dừng farming profile này.', this.profileTag);
+                    appState.updateProfileStatus(this.profileTag, 'error', { error: 'Ghost ban detected' });
+                    break;
+                }
+                if (this._stopRequested) break;
 
                 farmer.setLoop(loop, loopCount);
 
@@ -302,6 +317,77 @@ class Worker {
             log.debug(`Check account state lỗi: ${err.message}`, this.profileTag);
             return 'ok'; // Mặc định ok nếu không check được
         }
+    }
+
+    /**
+     * Check shadow ban tại shadowban.yuzurisa.com
+     * Return: 'ok' | 'ghost_ban'
+     * Tự động retry khi gặp lỗi kỹ thuật hoặc user not found
+     */
+    async _checkShadowBan(username) {
+        const url = `https://shadowban.yuzurisa.com/${username}`;
+        log.info(`🔍 Checking shadow ban: @${username}`, this.profileTag);
+
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            try {
+                this.page.once('dialog', async d => { await d.accept().catch(() => {}); });
+                await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await sleep(1500);
+
+                // Poll kết quả tối đa 60s
+                const result = await this._pollShadowBanResult(60000);
+
+                if (result === 'no_ban') {
+                    log.success('✅ Shadow ban: No ghost ban', this.profileTag);
+                    // Quay về home để farm
+                    this.page.once('dialog', async d => { await d.accept().catch(() => {}); });
+                    await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 25000 });
+                    await sleep(2000);
+                    return 'ok';
+                }
+
+                if (result === 'ghost_ban') {
+                    log.warn('🚫 Shadow ban: Ghost ban detected', this.profileTag);
+                    return 'ghost_ban';
+                }
+
+                // 'error' | 'not_found' | 'timeout' — thử lại
+                log.warn(`Shadow ban check: ${result} (lần ${attempt}/5), đợi 5s...`, this.profileTag);
+                await sleep(5000);
+
+                if (attempt < 5) {
+                    await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+                }
+
+            } catch (err) {
+                log.debug(`Shadow ban check lỗi: ${err.message}`, this.profileTag);
+                await sleep(5000);
+            }
+        }
+
+        // Sau 5 lần thất bại — giả định không bị ban và tiếp tục
+        log.warn('Shadow ban check thất bại sau 5 lần, tiếp tục farm...', this.profileTag);
+        this.page.once('dialog', async d => { await d.accept().catch(() => {}); });
+        await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+        await sleep(2000);
+        return 'ok';
+    }
+
+    async _pollShadowBanResult(timeoutMs) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const text = await this.page.evaluate(() => document.body?.innerText || '').catch(() => '');
+
+            if (text.includes('No ghost ban')) return 'no_ban';
+            // "Ghost ban." — chỉ match khi KHÔNG có "No ghost ban"
+            if (/\bGhost ban\b/i.test(text) && !text.includes('No ghost ban')) return 'ghost_ban';
+            if (text.includes('unable to test for technical reasons')) return 'error';
+            if (text.includes('does not exist') || text.includes("doesn't have any tweets")) return 'not_found';
+            // Vẫn đang chạy "Running test..." — đợi tiếp
+
+            await sleep(2000);
+        }
+        return 'timeout';
     }
 
     async cleanup() {
