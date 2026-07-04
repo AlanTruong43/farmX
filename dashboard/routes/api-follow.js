@@ -251,13 +251,26 @@ router.get('/stream', async (req, res) => {
     }
 });
 
-// ─── POST /api/follow/unfollow ───────────────────────────
-// Không navigate từng profile — scroll qua danh sách, click nút "Following" inline
+// ─── POST /api/follow/unfollow (SSE stream) ──────────────
+// Scroll qua danh sách, click nút "Following" inline, stream progress về client.
+// Client có thể abort (close connection) để dừng.
 router.post('/unfollow', async (req, res) => {
-    const { profileId, usernames, xUsername, type } = req.body;
+    const { profileId, usernames, xUsername, type, batchSize = 10, batchDelaySec = 10 } = req.body;
     if (!profileId || !Array.isArray(usernames) || usernames.length === 0 || !xUsername || !type) {
         return res.status(400).json({ error: 'Thiếu profileId, usernames[], xUsername hoặc type' });
     }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.flushHeaders();
+
+    let clientClosed = false;
+    req.on('close', () => { clientClosed = true; });
+
+    const send = (event, data) => {
+        if (clientClosed) return;
+        try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
+    };
 
     let conn = null;
     let genlogin = null;
@@ -267,7 +280,7 @@ router.post('/unfollow', async (req, res) => {
         genlogin = g;
         const page = conn.page;
 
-        log.info(`follow/unfollow: bắt đầu bỏ theo dõi ${usernames.length} người từ ${type} của @${xUsername}`);
+        log.info(`follow/unfollow: bắt đầu ${usernames.length} người từ ${type} của @${xUsername} (batch=${batchSize} delay=${batchDelaySec}s)`);
 
         page.once('dialog', async d => { await d.accept().catch(() => {}); });
         await page.goto(`https://x.com/${xUsername}/${type}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -275,9 +288,13 @@ router.post('/unfollow', async (req, res) => {
 
         const toUnfollow = new Set(usernames.map(u => u.toLowerCase()));
         const unfollowed = [], failed = [];
+        const total = usernames.length;
         let noNewCount = 0;
+        let doneCount = 0;
 
         while (toUnfollow.size > 0 && noNewCount < 6) {
+            if (clientClosed) { send('stopped', {}); break; }
+
             // Tìm user đầu tiên trong viewport có nút -unfollow và click
             const target = await page.evaluate((targets) => {
                 const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
@@ -300,44 +317,51 @@ router.post('/unfollow', async (req, res) => {
             }, [...toUnfollow]);
 
             if (target) {
-                // Đợi 2s sau khi click nút Following
-                await sleep(2000);
-                const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 3000 }).catch(() => null);
+                await sleep(2000); // chờ dialog xuất hiện
+                if (clientClosed) { send('stopped', {}); break; }
+
+                const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 4000 }).catch(() => null);
                 if (confirmBtn) {
                     await confirmBtn.click();
-                    // Đợi 2s sau khi xác nhận
-                    await sleep(2000);
+                    await sleep(2000); // chờ X xử lý xong
                     toUnfollow.delete(target.toLowerCase());
                     unfollowed.push(target);
-                    log.debug(`follow/unfollow: ✓ @${target} (${unfollowed.length} xong, còn ${toUnfollow.size})`);
-                    // Mỗi 10 người thì nghỉ 10s
-                    if (unfollowed.length % 10 === 0) {
-                        log.info(`follow/unfollow: nghỉ 10s sau ${unfollowed.length} người...`);
-                        await sleep(10000);
+                    doneCount++;
+                    log.debug(`follow/unfollow: ✓ @${target} (${doneCount}/${total})`);
+                    send('progress', { username: target, done: doneCount, total, remaining: toUnfollow.size });
+
+                    // Nghỉ sau mỗi batch
+                    if (doneCount % batchSize === 0 && toUnfollow.size > 0) {
+                        log.info(`follow/unfollow: nghỉ ${batchDelaySec}s sau ${doneCount} lần`);
+                        send('waiting', { seconds: batchDelaySec, after: doneCount });
+                        // Ngủ từng giây để có thể detect clientClosed sớm hơn
+                        for (let i = 0; i < batchDelaySec; i++) {
+                            if (clientClosed) break;
+                            await sleep(1000);
+                        }
                     }
                 } else {
                     toUnfollow.delete(target.toLowerCase());
                     failed.push(target);
-                    log.warn(`follow/unfollow: không thấy confirm dialog cho @${target}`);
+                    log.warn(`follow/unfollow: không thấy confirm cho @${target}`);
                 }
                 noNewCount = 0;
             } else {
-                // Không tìm thấy ai trong viewport — scroll xuống
                 noNewCount++;
                 await page.evaluate(() => window.scrollBy(0, 600));
                 await sleep(1200);
             }
         }
 
-        // Còn lại trong toUnfollow = không tìm thấy trong danh sách
         for (const u of toUnfollow) failed.push(u);
 
-        log.info(`follow/unfollow: xong — thành công ${unfollowed.length}, không tìm thấy ${failed.length}`);
-        res.json({ ok: true, unfollowed, failed });
+        log.info(`follow/unfollow: xong — ${unfollowed.length} thành công, ${failed.length} không tìm thấy`);
+        send('done', { unfollowed, failed, ok: true });
     } catch (err) {
         log.error(`follow/unfollow: ${err.message}`);
-        res.status(500).json({ error: err.message });
+        send('error', { message: err.message });
     } finally {
+        res.end();
         if (conn?.browser) await BrowserManager.disconnect(conn.browser).catch(() => {});
         if (genlogin) await genlogin.stopProfile(profileId).catch(() => {});
     }
