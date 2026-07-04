@@ -252,10 +252,11 @@ router.get('/stream', async (req, res) => {
 });
 
 // ─── POST /api/follow/unfollow ───────────────────────────
+// Không navigate từng profile — scroll qua danh sách, click nút "Following" inline
 router.post('/unfollow', async (req, res) => {
-    const { profileId, usernames } = req.body;
-    if (!profileId || !Array.isArray(usernames) || usernames.length === 0) {
-        return res.status(400).json({ error: 'Thiếu profileId hoặc usernames[]' });
+    const { profileId, usernames, xUsername, type } = req.body;
+    if (!profileId || !Array.isArray(usernames) || usernames.length === 0 || !xUsername || !type) {
+        return res.status(400).json({ error: 'Thiếu profileId, usernames[], xUsername hoặc type' });
     }
 
     let conn = null;
@@ -265,38 +266,68 @@ router.post('/unfollow', async (req, res) => {
         conn = c;
         genlogin = g;
         const page = conn.page;
+
+        log.info(`follow/unfollow: bắt đầu bỏ theo dõi ${usernames.length} người từ ${type} của @${xUsername}`);
+
+        page.once('dialog', async d => { await d.accept().catch(() => {}); });
+        await page.goto(`https://x.com/${xUsername}/${type}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await sleep(2500);
+
+        const toUnfollow = new Set(usernames.map(u => u.toLowerCase()));
         const unfollowed = [], failed = [];
+        let noNewCount = 0;
 
-        log.info(`follow/unfollow: bắt đầu bỏ theo dõi ${usernames.length} người (profile ${profileId})`);
-
-        for (const username of usernames) {
-            try {
-                page.once('dialog', async d => { await d.accept().catch(() => {}); });
-                await page.goto(`https://x.com/${username}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-                await sleep(2000);
-
-                const unfollowBtn = await page.$('[data-testid$="-unfollow"]');
-                if (!unfollowBtn) {
-                    log.warn(`follow/unfollow: không thấy nút unfollow cho @${username}`);
-                    failed.push(username);
-                    continue;
+        while (toUnfollow.size > 0 && noNewCount < 6) {
+            // Tìm user đầu tiên trong viewport có nút -unfollow và click
+            const target = await page.evaluate((targets) => {
+                const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
+                const vh = window.innerHeight;
+                for (const cell of primary.querySelectorAll('[data-testid="UserCell"]')) {
+                    let username = null;
+                    for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
+                        const parts = (link.getAttribute('href') || '').split('/').filter(Boolean);
+                        if (parts.length === 1 && !link.href.includes('/i/')) { username = parts[0]; break; }
+                    }
+                    if (!username || !targets.includes(username.toLowerCase())) continue;
+                    const btn = cell.querySelector('[data-testid$="-unfollow"]');
+                    if (!btn) continue;
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.top < 0 || rect.bottom > vh) continue;
+                    btn.click();
+                    return username;
                 }
+                return null;
+            }, [...toUnfollow]);
 
-                await unfollowBtn.click();
-                await sleep(1000);
-                const confirmBtn = await page.$('[data-testid="confirmationSheetConfirm"]');
-                if (confirmBtn) { await confirmBtn.click(); await sleep(1000); }
-
-                log.debug(`follow/unfollow: ✓ @${username}`);
-                unfollowed.push(username);
-                await sleep(1500);
-            } catch (err) {
-                log.error(`follow/unfollow: lỗi @${username} — ${err.message}`);
-                failed.push(username);
+            if (target) {
+                // Chờ confirm dialog
+                const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 3000 }).catch(() => null);
+                if (confirmBtn) {
+                    await confirmBtn.click();
+                    await sleep(700);
+                    toUnfollow.delete(target.toLowerCase());
+                    unfollowed.push(target);
+                    log.debug(`follow/unfollow: ✓ @${target} (còn ${toUnfollow.size})`);
+                } else {
+                    // Không có confirm — bỏ qua user này
+                    toUnfollow.delete(target.toLowerCase());
+                    failed.push(target);
+                    log.warn(`follow/unfollow: không thấy confirm dialog cho @${target}`);
+                }
+                noNewCount = 0;
+                await sleep(400);
+            } else {
+                // Không tìm thấy ai trong viewport — scroll xuống
+                noNewCount++;
+                await page.evaluate(() => window.scrollBy(0, 600));
+                await sleep(1200);
             }
         }
 
-        log.info(`follow/unfollow: xong — thành công ${unfollowed.length}, thất bại ${failed.length}`);
+        // Còn lại trong toUnfollow = không tìm thấy trong danh sách
+        for (const u of toUnfollow) failed.push(u);
+
+        log.info(`follow/unfollow: xong — thành công ${unfollowed.length}, không tìm thấy ${failed.length}`);
         res.json({ ok: true, unfollowed, failed });
     } catch (err) {
         log.error(`follow/unfollow: ${err.message}`);

@@ -16,12 +16,11 @@ async function _req(method, url, body) {
 }
 
 const followApi = {
-    unfollow: (profileId, usernames) => _req('POST', '/api/follow/unfollow', { profileId, usernames }),
+    unfollow: (profileId, usernames, xUsername, type) => _req('POST', '/api/follow/unfollow', { profileId, usernames, xUsername, type }),
     saveWindowSize: (width, height) => _req('PUT', '/api/config/follow-check', { width, height }),
 };
 
 let _activeStream = null;
-let _unfollowStop = false;
 
 // ─── State (giữ khi chuyển tab dashboard) ────────────────
 let state = {
@@ -59,20 +58,8 @@ export function render() {
             <button id="fc-load" class="btn btn-primary" style="min-width:110px">Tải danh sách</button>
             <button id="fc-stop" class="btn btn-danger" style="display:none;min-width:80px">⏹ Dừng</button>
             <div id="fc-xuser" style="font-size:12px;color:var(--text-secondary)"></div>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
                 <span id="fc-sel-count" style="font-size:12px;color:var(--text-secondary)"></span>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
-                    Mỗi lần:
-                    <input type="number" id="fc-batch-size" value="10" min="1" max="200"
-                           style="width:52px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
-                </label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
-                    Nghỉ:
-                    <input type="number" id="fc-delay-sec" value="30" min="0" max="3600"
-                           style="width:52px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
-                    giây
-                </label>
-                <button id="fc-unfollow-stop" class="btn btn-danger" style="display:none">⏹ Dừng</button>
                 <button id="fc-unfollow-btn" class="btn btn-danger" style="display:none">
                     Bỏ theo dõi (<span id="fc-sel-num">0</span>)
                 </button>
@@ -347,10 +334,6 @@ function bindEvents() {
 
     document.getElementById('fc-unfollow-btn').addEventListener('click', doUnfollow);
 
-    document.getElementById('fc-unfollow-stop').addEventListener('click', () => {
-        _unfollowStop = true;
-    });
-
     document.getElementById('fc-log-clear').addEventListener('click', () => {
         const el = document.getElementById('fc-logs');
         if (!el) return;
@@ -608,55 +591,32 @@ function addLog(msg, level = 'info') {
 async function doUnfollow() {
     const usernames = Array.from(state.selected);
     if (usernames.length === 0) return;
+    if (!state.xUsername) { toast('Cần tải danh sách trước khi unfollow', 'error'); return; }
+    if (!confirm(`Bỏ theo dõi ${usernames.length} tài khoản?`)) return;
 
-    const batchSize = Math.max(1, parseInt(document.getElementById('fc-batch-size')?.value) || 10);
-    const delaySec  = Math.max(0, parseInt(document.getElementById('fc-delay-sec')?.value)  || 30);
-    const batches = [];
-    for (let i = 0; i < usernames.length; i += batchSize) batches.push(usernames.slice(i, i + batchSize));
-
-    if (!confirm(`Bỏ theo dõi ${usernames.length} tài khoản? (${batches.length} lần, nghỉ ${delaySec}s giữa mỗi lần)`)) return;
-
-    _unfollowStop = false;
-    const btn  = document.getElementById('fc-unfollow-btn');
-    const stop = document.getElementById('fc-unfollow-stop');
+    const btn = document.getElementById('fc-unfollow-btn');
     btn.disabled = true;
-    btn.innerHTML = 'Đang xử lý...';
-    stop.style.display = 'inline-flex';
+    btn.innerHTML = `Đang xử lý ${usernames.length}...`;
 
-    addLog(`Bắt đầu bỏ theo dõi ${usernames.length} người (${batches.length} lần × ${batchSize}, nghỉ ${delaySec}s)`, 'info');
+    addLog(`Bắt đầu bỏ theo dõi ${usernames.length} người...`);
 
-    let totalDone = 0;
     try {
-        for (let i = 0; i < batches.length; i++) {
-            if (_unfollowStop) { addLog('Đã dừng unfollow', 'warn'); break; }
-            const batch = batches[i];
-            addLog(`Lần ${i + 1}/${batches.length}: bỏ theo dõi ${batch.length} người...`);
-            try {
-                const res = await followApi.unfollow(state.selectedProfile, batch);
-                const done = new Set(res.unfollowed || []);
-                totalDone += done.size;
-                if (done.size) addLog(`  ✓ Thành công: ${[...done].join(', ')}`, 'success');
-                if (res.failed?.length) addLog(`  ✗ Thất bại: ${res.failed.join(', ')}`, 'error');
-                state.users = state.users.filter(u => !done.has(u.username));
-                state.selected = new Set([...state.selected].filter(u => !done.has(u)));
-                state.cache[state.activeTab] = null;
-                renderList();
-                updateSelCount();
-                document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
-            } catch (err) {
-                addLog(`  Lỗi lần ${i + 1}: ${err.message}`, 'error');
-            }
-
-            if (i < batches.length - 1 && !_unfollowStop) {
-                addLog(`Nghỉ ${delaySec} giây...`, 'warn');
-                await new Promise(r => setTimeout(r, delaySec * 1000));
-            }
-        }
-        addLog(`Hoàn thành: đã bỏ theo dõi ${totalDone} người`, 'success');
-        toast(`Đã bỏ theo dõi ${totalDone} tài khoản`, 'success');
+        const res = await followApi.unfollow(state.selectedProfile, usernames, state.xUsername, state.activeTab);
+        const done = new Set(res.unfollowed || []);
+        addLog(`✓ Thành công: ${done.size} người`, 'success');
+        if (res.failed?.length) addLog(`✗ Không tìm thấy trong danh sách: ${res.failed.join(', ')}`, 'warn');
+        toast(`Đã bỏ theo dõi ${done.size} tài khoản`, 'success');
+        state.users = state.users.filter(u => !done.has(u.username));
+        state.selected = new Set([...state.selected].filter(u => !done.has(u)));
+        state.cache[state.activeTab] = null;
+        renderList();
+        updateSelCount();
+        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
+    } catch (err) {
+        addLog(`Lỗi: ${err.message}`, 'error');
+        toast('Lỗi: ' + err.message, 'error');
     } finally {
         btn.disabled = false;
-        stop.style.display = 'none';
         updateSelCount();
     }
 }
