@@ -21,6 +21,7 @@ const followApi = {
 };
 
 let _activeStream = null;
+let _unfollowStop = false;
 
 // ─── State (giữ khi chuyển tab dashboard) ────────────────
 let state = {
@@ -58,8 +59,20 @@ export function render() {
             <button id="fc-load" class="btn btn-primary" style="min-width:110px">Tải danh sách</button>
             <button id="fc-stop" class="btn btn-danger" style="display:none;min-width:80px">⏹ Dừng</button>
             <div id="fc-xuser" style="font-size:12px;color:var(--text-secondary)"></div>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span id="fc-sel-count" style="font-size:12px;color:var(--text-secondary)"></span>
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
+                    Mỗi lần:
+                    <input type="number" id="fc-batch-size" value="10" min="1" max="200"
+                           style="width:52px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
+                    Nghỉ:
+                    <input type="number" id="fc-delay-sec" value="30" min="0" max="3600"
+                           style="width:52px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+                    giây
+                </label>
+                <button id="fc-unfollow-stop" class="btn btn-danger" style="display:none">⏹ Dừng</button>
                 <button id="fc-unfollow-btn" class="btn btn-danger" style="display:none">
                     Bỏ theo dõi (<span id="fc-sel-num">0</span>)
                 </button>
@@ -134,6 +147,17 @@ export function render() {
             <div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
                 Chọn profile và nhấn <strong>Tải danh sách</strong>
             </div>
+        </div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
+        <div style="padding:8px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <span style="font-size:13px;font-weight:500;color:var(--text-secondary)">Logs</span>
+            <button id="fc-log-clear" class="btn" style="padding:2px 8px;font-size:11px">Xóa</button>
+        </div>
+        <div id="fc-logs" style="font-family:monospace;font-size:11px;padding:8px 16px;max-height:180px;overflow-y:auto;color:var(--text-secondary);background:var(--bg-secondary)">
+            <div id="fc-logs-empty" style="color:var(--text-muted)">Chưa có logs</div>
         </div>
     </div>`;
 }
@@ -313,7 +337,7 @@ function bindEvents() {
     });
 
     document.getElementById('fc-select-all').addEventListener('change', e => {
-        state.users.filter(u => userPassesFilter(u)).forEach(u => {
+        state.users.filter(u => userPassesFilter(u) && userPassesFollowFilter(u)).forEach(u => {
             if (e.target.checked) state.selected.add(u.username);
             else state.selected.delete(u.username);
         });
@@ -322,6 +346,16 @@ function bindEvents() {
     });
 
     document.getElementById('fc-unfollow-btn').addEventListener('click', doUnfollow);
+
+    document.getElementById('fc-unfollow-stop').addEventListener('click', () => {
+        _unfollowStop = true;
+    });
+
+    document.getElementById('fc-log-clear').addEventListener('click', () => {
+        const el = document.getElementById('fc-logs');
+        if (!el) return;
+        el.innerHTML = '<div id="fc-logs-empty" style="color:var(--text-muted)">Chưa có logs</div>';
+    });
 }
 
 // ─── Stop single stream ───────────────────────────────────
@@ -331,6 +365,7 @@ function stopStream() {
     document.getElementById('fc-load').disabled = false;
     document.getElementById('fc-load').textContent = 'Tải danh sách';
     document.getElementById('fc-stop').style.display = 'none';
+    addLog(`Đã dừng tải (${state.users.length} người đã tải)`, 'warn');
     toast('Đã dừng tải danh sách', 'info');
 }
 
@@ -372,6 +407,7 @@ function loadList() {
         document.getElementById('fc-xuser').textContent = `@${d.xUsername} — ${label}`;
         document.getElementById('fc-table-header').style.display = 'block';
         document.getElementById('fc-list').innerHTML = '';
+        addLog(`Bắt đầu tải ${label} của @${d.xUsername}`);
     });
 
     es.addEventListener('user', e => {
@@ -381,6 +417,8 @@ function loadList() {
         document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
         if (userPassesFilter(u)) appendUserRow(u);
         updateResultCount();
+        const tick = u.verifiedType ? ` [${u.verifiedType}]` : '';
+        addLog(`  #${state.users.length} @${u.username}${tick}`);
     });
 
     es.addEventListener('stats', e => {
@@ -395,10 +433,13 @@ function loadList() {
             row.style.display = show ? '' : 'none';
         }
         updateResultCount();
+        const fy = d.followsYou === true ? 'có follow lại' : d.followsYou === false ? 'không follow lại' : '?';
+        addLog(`    → following=${formatCount(d.following)} followers=${formatCount(d.followers)} — ${fy}`);
     });
 
     es.addEventListener('done', e => {
         const d = JSON.parse(e.data);
+        addLog(`Hoàn thành: ${d.total || state.users.length} người`, 'success');
         toast(`Hoàn thành: ${d.total || state.users.length} người`, 'success');
         finishSingle();
         es.close();
@@ -408,6 +449,7 @@ function loadList() {
     es.addEventListener('error', e => {
         let msg = 'Kết nối bị đóng';
         try { const d = JSON.parse(e.data); msg = d.message || msg; } catch {}
+        addLog(`Lỗi: ${msg}`, 'error');
         toast(msg, 'error');
         finishSingle();
         es.close();
@@ -546,30 +588,75 @@ function userRowHtml(u) {
     return `<div id="fc-row-${escAttr(u.username)}" style="border-bottom:1px solid var(--border);${isSelected ? 'background:rgba(88,166,255,0.07)' : ''}"><div style="display:grid;grid-template-columns:36px 1fr 100px 100px 110px 70px;gap:8px;align-items:center;padding:9px 20px;box-sizing:border-box;width:100%"><div style="display:flex;align-items:center;justify-content:center"><input type="checkbox" class="fc-user-check" data-username="${escAttr(u.username)}" ${isSelected ? 'checked' : ''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"></div><div style="display:flex;align-items:center;gap:10px;min-width:0">${avatarHtml}<div style="min-width:0"><div style="font-size:13px;font-weight:500"><a href="https://x.com/${escAttr(u.username)}" target="_blank" style="color:var(--text-primary);text-decoration:none;max-width:200px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(u.displayName || u.username)}">${escHtml(u.displayName || u.username)}</a></div><div style="font-size:11px;color:var(--text-secondary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@${escHtml(u.username)}</div></div></div><div id="fc-col-following-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div><div id="fc-col-followers-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div><div id="fc-col-followsyou-${escAttr(u.username)}" style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div><div style="display:flex;align-items:center;justify-content:center">${tickHtml}</div></div></div>`;
 }
 
+// ─── Log panel ───────────────────────────────────────────
+function addLog(msg, level = 'info') {
+    const el = document.getElementById('fc-logs');
+    if (!el) return;
+    const empty = document.getElementById('fc-logs-empty');
+    if (empty) empty.remove();
+    const color = level === 'error' ? '#f87171' : level === 'success' ? '#4ade80' : level === 'warn' ? '#fbbf24' : 'var(--text-secondary)';
+    const time = new Date().toLocaleTimeString('vi-VN');
+    const row = document.createElement('div');
+    row.style.cssText = `color:${color};margin-bottom:1px;white-space:pre-wrap;word-break:break-all`;
+    row.textContent = `[${time}] ${msg}`;
+    el.appendChild(row);
+    while (el.children.length > 300) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+}
+
 // ─── Unfollow ────────────────────────────────────────────
 async function doUnfollow() {
     const usernames = Array.from(state.selected);
     if (usernames.length === 0) return;
-    if (!confirm(`Bỏ theo dõi ${usernames.length} tài khoản?`)) return;
 
-    const btn = document.getElementById('fc-unfollow-btn');
+    const batchSize = Math.max(1, parseInt(document.getElementById('fc-batch-size')?.value) || 10);
+    const delaySec  = Math.max(0, parseInt(document.getElementById('fc-delay-sec')?.value)  || 30);
+    const batches = [];
+    for (let i = 0; i < usernames.length; i += batchSize) batches.push(usernames.slice(i, i + batchSize));
+
+    if (!confirm(`Bỏ theo dõi ${usernames.length} tài khoản? (${batches.length} lần, nghỉ ${delaySec}s giữa mỗi lần)`)) return;
+
+    _unfollowStop = false;
+    const btn  = document.getElementById('fc-unfollow-btn');
+    const stop = document.getElementById('fc-unfollow-stop');
     btn.disabled = true;
     btn.innerHTML = 'Đang xử lý...';
+    stop.style.display = 'inline-flex';
 
+    addLog(`Bắt đầu bỏ theo dõi ${usernames.length} người (${batches.length} lần × ${batchSize}, nghỉ ${delaySec}s)`, 'info');
+
+    let totalDone = 0;
     try {
-        const res = await followApi.unfollow(state.selectedProfile, usernames);
-        toast(`Đã bỏ theo dõi ${res.unfollowed?.length || 0} tài khoản`, 'success');
-        if (res.failed?.length) toast(`Thất bại: ${res.failed.join(', ')}`, 'error');
-        const done = new Set(res.unfollowed || []);
-        state.users = state.users.filter(u => !done.has(u.username));
-        state.selected.clear();
-        renderList();
-        updateSelCount();
-        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
-    } catch (err) {
-        toast('Lỗi: ' + err.message, 'error');
+        for (let i = 0; i < batches.length; i++) {
+            if (_unfollowStop) { addLog('Đã dừng unfollow', 'warn'); break; }
+            const batch = batches[i];
+            addLog(`Lần ${i + 1}/${batches.length}: bỏ theo dõi ${batch.length} người...`);
+            try {
+                const res = await followApi.unfollow(state.selectedProfile, batch);
+                const done = new Set(res.unfollowed || []);
+                totalDone += done.size;
+                if (done.size) addLog(`  ✓ Thành công: ${[...done].join(', ')}`, 'success');
+                if (res.failed?.length) addLog(`  ✗ Thất bại: ${res.failed.join(', ')}`, 'error');
+                state.users = state.users.filter(u => !done.has(u.username));
+                state.selected = new Set([...state.selected].filter(u => !done.has(u)));
+                state.cache[state.activeTab] = null;
+                renderList();
+                updateSelCount();
+                document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
+            } catch (err) {
+                addLog(`  Lỗi lần ${i + 1}: ${err.message}`, 'error');
+            }
+
+            if (i < batches.length - 1 && !_unfollowStop) {
+                addLog(`Nghỉ ${delaySec} giây...`, 'warn');
+                await new Promise(r => setTimeout(r, delaySec * 1000));
+            }
+        }
+        addLog(`Hoàn thành: đã bỏ theo dõi ${totalDone} người`, 'success');
+        toast(`Đã bỏ theo dõi ${totalDone} tài khoản`, 'success');
     } finally {
         btn.disabled = false;
+        stop.style.display = 'none';
         updateSelCount();
     }
 }

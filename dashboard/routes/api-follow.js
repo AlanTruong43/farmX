@@ -126,6 +126,7 @@ router.get('/stream', async (req, res) => {
         const xUsername = await getXUsername(page);
         if (!xUsername) { send('error', { message: 'Không lấy được username X. Profile chưa login?' }); return; }
 
+        log.info(`follow/stream: @${xUsername} — ${type} (profile ${profileId})`);
         send('meta', { xUsername, type });
 
         page.once('dialog', async d => { await d.accept().catch(() => {}); });
@@ -198,6 +199,7 @@ router.get('/stream', async (req, res) => {
                 added++;
 
                 // Emit user ngay — frontend hiện row
+                log.debug(`follow/stream: user #${seen.size} @${cell.username}${cell.verifiedType ? ' [' + cell.verifiedType + ']' : ''}`);
                 send('user', {
                     username: cell.username,
                     displayName: cell.displayName,
@@ -213,8 +215,10 @@ router.get('/stream', async (req, res) => {
                     if (hoverCard) {
                         await sleep(400); // chờ số liệu render
                         const stats = await getHoverCardStats(page);
-                        if (stats) send('stats', { username: cell.username, ...stats });
-                        else send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
+                        if (stats) {
+                            log.debug(`follow/stream: stats @${cell.username} — following=${stats.following} followers=${stats.followers} followsYou=${stats.followsYou}`);
+                            send('stats', { username: cell.username, ...stats });
+                        } else send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
                         // Dismiss hover card
                         await page.mouse.move(10, 400);
                         await sleep(300);
@@ -235,6 +239,7 @@ router.get('/stream', async (req, res) => {
             await sleep(1500);
         }
 
+        log.info(`follow/stream: hoàn thành — ${seen.size} người (profile ${profileId})`);
         send('done', { total: seen.size });
     } catch (err) {
         log.error(`follow/stream: ${err.message}`);
@@ -262,6 +267,8 @@ router.post('/unfollow', async (req, res) => {
         const page = conn.page;
         const unfollowed = [], failed = [];
 
+        log.info(`follow/unfollow: bắt đầu bỏ theo dõi ${usernames.length} người (profile ${profileId})`);
+
         for (const username of usernames) {
             try {
                 page.once('dialog', async d => { await d.accept().catch(() => {}); });
@@ -269,18 +276,27 @@ router.post('/unfollow', async (req, res) => {
                 await sleep(2000);
 
                 const unfollowBtn = await page.$('[data-testid$="-unfollow"]');
-                if (!unfollowBtn) { failed.push(username); continue; }
+                if (!unfollowBtn) {
+                    log.warn(`follow/unfollow: không thấy nút unfollow cho @${username}`);
+                    failed.push(username);
+                    continue;
+                }
 
                 await unfollowBtn.click();
                 await sleep(1000);
                 const confirmBtn = await page.$('[data-testid="confirmationSheetConfirm"]');
                 if (confirmBtn) { await confirmBtn.click(); await sleep(1000); }
 
+                log.debug(`follow/unfollow: ✓ @${username}`);
                 unfollowed.push(username);
                 await sleep(1500);
-            } catch { failed.push(username); }
+            } catch (err) {
+                log.error(`follow/unfollow: lỗi @${username} — ${err.message}`);
+                failed.push(username);
+            }
         }
 
+        log.info(`follow/unfollow: xong — thành công ${unfollowed.length}, thất bại ${failed.length}`);
         res.json({ ok: true, unfollowed, failed });
     } catch (err) {
         log.error(`follow/unfollow: ${err.message}`);
