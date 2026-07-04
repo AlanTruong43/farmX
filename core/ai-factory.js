@@ -16,7 +16,7 @@ function createAIProvider(config = {}) {
     const type = (ap.type || 'gemini').toLowerCase();
 
     if (type === 'ezai') {
-        log.debug(`AI Provider: EzAI (${ap.model || 'gpt-4.1-nano'})`);
+        log.debug(`AI Provider: DEMO (${ap.model || 'gpt-4.1-nano'})`);
         return new EzAIClient({
             api_key: ap.api_key || '',
             model: ap.model || 'gpt-4.1-nano',

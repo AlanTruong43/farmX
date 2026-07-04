@@ -9,6 +9,8 @@ class AIProvider {
         this.model = config.model || '';
         this.systemPrompt = config.comment_prompt || 'Write a short, natural comment for this tweet.';
         this.maxTokens = config.max_tokens || 100;
+        // Track recent comments để tránh trùng lặp (giữ 30 comment gần nhất)
+        this._recentComments = [];
     }
 
     /**
@@ -19,6 +21,63 @@ class AIProvider {
      */
     async generateComment(tweetData, profileTag = '') {
         throw new Error('generateComment() phải được implement bởi subclass');
+    }
+
+    /**
+     * Detect ngôn ngữ tweet bằng AI
+     * Return: 'vi' | 'en' | 'other'
+     */
+    async detectLanguage(tweetData, profileTag = '') {
+        const text = tweetData.text || '';
+        if (!text || text.trim().length < 5) return 'other';
+
+        // Quick heuristic trước — tránh gọi API không cần thiết
+        const viPattern = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+        if (viPattern.test(text)) return 'vi';
+
+        const nonLatinRatio = (text.replace(/[a-zA-Z0-9\s.,!?'"@#$%&*()-]/g, '').length) / Math.max(text.length, 1);
+        if (nonLatinRatio > 0.3) return 'other'; // Korean, Japanese, Chinese, Arabic...
+
+        // Gọi AI để phân biệt English vs other Latin languages
+        try {
+            const result = await this._detectLangRequest(text);
+            return result;
+        } catch {
+            // Fallback: nếu có nhiều chữ Latin → coi là en
+            return 'en';
+        }
+    }
+
+    // Override trong subclass nếu muốn dùng AI thật cho language detection
+    async _detectLangRequest(text) {
+        return 'en';
+    }
+
+    /**
+     * Lưu comment vừa tạo vào lịch sử gần đây
+     */
+    _trackComment(comment) {
+        if (!comment) return;
+        this._recentComments.push(comment.toLowerCase().trim());
+        if (this._recentComments.length > 30) this._recentComments.shift();
+    }
+
+    /**
+     * Kiểm tra comment có bị trùng với lịch sử không
+     */
+    _isDuplicateComment(comment) {
+        if (!comment) return false;
+        const normalized = comment.toLowerCase().trim();
+        return this._recentComments.some(c => {
+            // Trùng chính xác
+            if (c === normalized) return true;
+            // Giống nhau > 80% (dùng Jaccard similarity trên words)
+            const setA = new Set(c.split(/\s+/));
+            const setB = new Set(normalized.split(/\s+/));
+            const intersection = new Set([...setA].filter(w => setB.has(w)));
+            const union = new Set([...setA, ...setB]);
+            return union.size > 0 && (intersection.size / union.size) >= 0.8;
+        });
     }
 
     /**

@@ -142,6 +142,13 @@ class Worker {
                     appState.updateProfileStats(this.profileTag, loopStats);
                 }
 
+                // Dừng nếu API lỗi 5 loop liên tiếp
+                if (loopStats?.apiDisabled || farmer.isApiDown()) {
+                    log.error('Dừng profile do API lỗi liên tiếp', this.profileTag);
+                    appState.updateProfileStatus(this.profileTag, 'error', { error: 'API down after 5 loops' });
+                    break;
+                }
+
                 // Delay giữa các loop + thông báo nghỉ
                 if (loop < loopCount && !this._stopRequested) {
                     const minLoopDelay = this.farming.min_delay_between_loops_ms || 30000;

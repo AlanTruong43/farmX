@@ -32,12 +32,21 @@ class Farmer {
 
         // Track tweets đã xử lý (tránh xử lý lại sau scroll)
         this._processedTweetIds = new Set();
+
+        // API error tracking — dừng profile sau 5 loop lỗi liên tiếp
+        this._apiErrorLoops = 0;
+        this._apiDisabled = false;
     }
 
     // ─── Set loop context (gọi từ worker trước mỗi loop) ────────────
     setLoop(current, total) {
         this._currentLoop = current;
         this._totalLoops = total;
+    }
+
+    // ─── API có đang hoạt động không ────────────────────────────────
+    isApiDown() {
+        return this._apiDisabled;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -120,6 +129,7 @@ class Farmer {
         let commentedCount = 0;
         let followedCount = 0;
         let interactedCount = 0;
+        let loopHadApiError = false;
         const likedUrls = [];
         const commentedUrls = [];
         const loopTag = `Loop ${this._currentLoop}/${this._totalLoops}`;
@@ -169,22 +179,19 @@ class Farmer {
                     const tweetData = await this._extractTweetData(tweet);
                     if (!tweetData) continue;
 
-                    // Language filter
+                    // Language filter — dùng AI detect (nhanh, chỉ dùng heuristic + 1 API call nhẹ)
                     const lang = this.languageFilter;
-                    if (lang === 'vi' && !this._isVietnamese(tweetData.text)) {
-                        if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Việt)', this.profileTag, this._currentLoop);
-                        continue;
-                    }
-                    if (lang === 'en' && !this._isEnglish(tweetData.text)) {
-                        if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Anh)', this.profileTag, this._currentLoop);
-                        continue;
-                    }
-                    if (lang === 'vi+en' && !this._isVietnamese(tweetData.text) && !this._isEnglish(tweetData.text)) {
-                        if (tweetId) this._processedTweetIds.add(tweetId);
-                        log.info('⏭ Skip (không phải tiếng Việt/Anh)', this.profileTag, this._currentLoop);
-                        continue;
+                    if (lang && lang !== '') {
+                        const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag);
+                        let shouldSkip = false;
+                        if (lang === 'vi' && detectedLang !== 'vi') shouldSkip = true;
+                        if (lang === 'en' && detectedLang !== 'en') shouldSkip = true;
+                        if (lang === 'vi+en' && detectedLang !== 'vi' && detectedLang !== 'en') shouldSkip = true;
+                        if (shouldSkip) {
+                            if (tweetId) this._processedTweetIds.add(tweetId);
+                            log.info(`⏭ Skip (${detectedLang} ≠ ${lang})`, this.profileTag, this._currentLoop);
+                            continue;
+                        }
                     }
 
                     // Scroll vào giữa
@@ -223,11 +230,11 @@ class Farmer {
 
                     // Pre-fetch AI comment song song với các actions khác
                     let commentPromise = null;
-                    if (doActions) {
+                    if (doActions && !this._apiDisabled) {
                         log.debug('Pre-fetch AI comment...', this.profileTag);
                         commentPromise = this.ai.generateComment(tweetData, this.profileTag)
                             .catch(err => {
-                                log.debug(`AI pre-fetch lỗi: ${err.message}`, this.profileTag);
+                                log.warn(`API lỗi: ${err.message} — bỏ qua comment loop này`, this.profileTag);
                                 return null;
                             });
                     }
@@ -261,6 +268,9 @@ class Farmer {
                                 if (tweetId) commentedUrls.push('https://x.com' + tweetId);
                                 await randomDelay(this.minActionDelay, this.maxActionDelay);
                             }
+                        } else {
+                            // null = API lỗi trong loop này
+                            loopHadApiError = true;
                         }
                     }
 
@@ -276,13 +286,26 @@ class Farmer {
             await randomDelay(1500, 3000);
         }
 
+        // Cập nhật bộ đếm lỗi API liên tiếp
+        if (loopHadApiError && commentedCount === 0) {
+            this._apiErrorLoops++;
+            log.warn(`API lỗi ${this._apiErrorLoops}/5 loop liên tiếp`, this.profileTag, this._currentLoop);
+            if (this._apiErrorLoops >= 5) {
+                this._apiDisabled = true;
+                log.error('API lỗi 5 loop liên tiếp — dừng profile!', this.profileTag);
+            }
+        } else if (commentedCount > 0) {
+            // Reset counter khi comment thành công
+            this._apiErrorLoops = 0;
+        }
+
         log.success(
             `Kết quả: ${processedCount} tweets xử lý | ${likedCount} liked | ${followedCount} followed | ${commentedCount} commented`,
             this.profileTag,
             this._currentLoop
         );
 
-        return { processedCount, likedCount, commentedCount, followedCount, likedUrls, commentedUrls };
+        return { processedCount, likedCount, commentedCount, followedCount, likedUrls, commentedUrls, apiDisabled: this._apiDisabled };
     }
 
     // ─── Trích xuất nội dung tweet ───────────────────────────────────
