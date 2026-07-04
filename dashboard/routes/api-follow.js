@@ -59,6 +59,7 @@ function walkForUsers(obj, gqlData, depth = 0) {
                 followers: legacy.followers_count ?? null,
                 isBlueVerified: result.is_blue_verified === true,
                 isGoldVerified: !!(result.affiliates_highlighted_label?.label?.badge?.url),
+                followsYou: legacy.followed_by === true,
             });
         }
         return;
@@ -173,6 +174,8 @@ async function scrapeList(page, xUsername, type) {
                 user.followers = gql.followers;
                 if (gql.isBlueVerified) user.verifiedType = 'blue';
                 if (gql.isGoldVerified) user.verifiedType = 'gold';
+                // followsYou từ GQL chính xác hơn DOM (DOM chỉ show badge trong 1 số trường hợp)
+                if (gql.followsYou !== undefined) user.followsYou = gql.followsYou;
             }
             result.push(user);
         }
