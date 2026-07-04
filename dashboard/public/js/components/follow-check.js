@@ -36,6 +36,8 @@ let state = {
     filterGold: false,
     loading: false,
     xUsername: null,
+    // Cache riêng cho mỗi tab (following / followers)
+    cache: { following: null, followers: null },
 };
 
 // ─── Render ──────────────────────────────────────────────
@@ -225,22 +227,59 @@ function bindEvents() {
 
     document.querySelectorAll('.fc-tab').forEach(btn => {
         btn.addEventListener('click', () => {
-            if (btn.dataset.tab === state.activeTab) return;
-            state.activeTab = btn.dataset.tab;
-            state.users = [];
-            state.selected.clear();
-            state.xUsername = null;
+            const newTab = btn.dataset.tab;
+            if (newTab === state.activeTab) return;
+
+            // Dừng stream đang chạy và lưu data tab hiện tại vào cache
+            if (_activeStream) {
+                _activeStream.close();
+                _activeStream = null;
+                state.loading = false;
+                document.getElementById('fc-load').disabled = false;
+                document.getElementById('fc-load').textContent = 'Tải danh sách';
+                document.getElementById('fc-stop').style.display = 'none';
+            }
+            state.cache[state.activeTab] = {
+                users: [...state.users],
+                xUsername: state.xUsername,
+                selected: new Set(state.selected),
+            };
+
+            // Chuyển sang tab mới
+            state.activeTab = newTab;
             document.querySelectorAll('.fc-tab').forEach(b => {
                 b.style.borderBottomColor = 'transparent';
                 b.style.color = 'var(--text-secondary)';
             });
             btn.style.borderBottomColor = 'var(--accent)';
             btn.style.color = 'var(--text-primary)';
-            document.getElementById('fc-table-header').style.display = 'none';
-            document.getElementById('fc-list').innerHTML =
-                '<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Chọn profile và nhấn <strong>Tải danh sách</strong></div>';
-            document.getElementById('fc-following-count').textContent = '';
-            document.getElementById('fc-followers-count').textContent = '';
+
+            // Restore cache nếu có, ngược lại hiện empty state
+            const cached = state.cache[newTab];
+            if (cached && cached.users.length > 0) {
+                state.users = cached.users;
+                state.xUsername = cached.xUsername;
+                state.selected = cached.selected;
+                document.getElementById(`fc-${newTab}-count`).textContent = state.users.length;
+                if (state.xUsername) {
+                    const label = newTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
+                    document.getElementById('fc-xuser').textContent = `@${state.xUsername} — ${label}`;
+                }
+                document.getElementById('fc-table-header').style.display = 'block';
+                renderList();
+                updateSelCount();
+            } else {
+                state.users = [];
+                state.selected = new Set();
+                state.xUsername = null;
+                document.getElementById('fc-xuser').textContent = '';
+                document.getElementById(`fc-following-count`).textContent = '';
+                document.getElementById(`fc-followers-count`).textContent = '';
+                document.getElementById('fc-table-header').style.display = 'none';
+                document.getElementById('fc-list').innerHTML =
+                    '<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Chọn profile và nhấn <strong>Tải danh sách</strong></div>';
+                updateSelCount();
+            }
         });
     });
 
@@ -305,6 +344,7 @@ function loadList() {
     state.loading = true;
     state.users = [];
     state.selected.clear();
+    state.cache[state.activeTab] = null; // xóa cache cũ khi load mới
 
     const loadBtn = document.getElementById('fc-load');
     const stopBtn = document.getElementById('fc-stop');
