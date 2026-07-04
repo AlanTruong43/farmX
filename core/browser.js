@@ -198,6 +198,70 @@ class BrowserManager {
     }
 
     /**
+     * Kết nối cho Follow Check — window size riêng, đặt bên cạnh/dưới farming grid
+     * @param {string} wsEndpoint
+     * @param {number} winWidth
+     * @param {number} winHeight
+     * @returns {Promise<{browser: Browser, page: Page}>}
+     */
+    static async connectFollowCheck(wsEndpoint, winWidth = 1280, winHeight = 900) {
+        const browser = await puppeteer.connect({
+            browserWSEndpoint: wsEndpoint,
+            defaultViewport: null,
+            ignoreHTTPSErrors: true,
+        });
+        const pages = await browser.pages();
+        const page = pages.length > 0 ? pages[0] : await browser.newPage();
+        page.setDefaultNavigationTimeout(60000);
+        page.setDefaultTimeout(30000);
+
+        try {
+            const screen = await getScreenSize();
+            let x = 0, y = 0, w = winWidth, h = winHeight;
+
+            if (_activeSlots.size > 0 && _totalSlots > 0) {
+                const { cols, rows } = this._calcGrid(_totalSlots);
+                const cellW = Math.floor(screen.width / cols);
+                const cellH = Math.floor(screen.height / rows);
+                const farmRight = cellW * cols;
+                const farmBottom = cellH * rows;
+                const rightSpace = screen.width - farmRight;
+
+                if (rightSpace >= Math.min(winWidth, 480)) {
+                    // Đặt bên phải farming grid
+                    x = farmRight;
+                    y = 0;
+                    w = Math.min(winWidth, rightSpace);
+                    h = Math.min(winHeight, screen.height);
+                } else {
+                    // Đặt dưới farming grid
+                    const botSpace = screen.height - farmBottom;
+                    if (botSpace >= Math.min(winHeight, 300)) {
+                        x = 0;
+                        y = farmBottom;
+                        w = Math.min(winWidth, screen.width);
+                        h = Math.min(winHeight, botSpace);
+                    } else {
+                        // Không còn chỗ — đặt góc phải dưới, chồng lên
+                        x = Math.max(0, screen.width - winWidth);
+                        y = Math.max(0, screen.height - winHeight);
+                    }
+                }
+            }
+
+            const cdp = await page.createCDPSession();
+            const { windowId } = await cdp.send('Browser.getWindowForTarget');
+            await cdp.send('Browser.setWindowBounds', {
+                windowId,
+                bounds: { left: x, top: y, width: w, height: h, windowState: 'normal' },
+            });
+            await cdp.detach();
+        } catch {}
+
+        return { browser, page };
+    }
+
+    /**
      * Disconnect khỏi browser (KHÔNG đóng browser - GenLogin quản lý)
      */
     static async disconnect(browser, slotIndex) {

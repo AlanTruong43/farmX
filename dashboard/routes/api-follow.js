@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const GenLoginClient = require('../../core/genlogin');
 const BrowserManager = require('../../core/browser');
+const appState = require('../../core/state');
 const log = require('../../utils/logger');
 
 const CONFIG_PATH = path.resolve(__dirname, '../../config.json');
@@ -25,7 +26,8 @@ async function connectProfile(profileId) {
     const config = readConfig();
     const genlogin = new GenLoginClient(config.genlogin_url);
     const { wsEndpoint } = await genlogin.startProfile(profileId);
-    const conn = await BrowserManager.connect(wsEndpoint);
+    const fcWin = config.follow_check_window || {};
+    const conn = await BrowserManager.connectFollowCheck(wsEndpoint, fcWin.width || 1280, fcWin.height || 900);
     return { genlogin, conn, config };
 }
 
@@ -100,10 +102,25 @@ router.get('/stream', async (req, res) => {
         try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
     };
 
+    // Reject nếu profile đang được farming
+    if (appState.farmingActive) {
+        for (const [tag, data] of appState.activeProfiles) {
+            if (data.status === 'farming' || data.status === 'starting') {
+                if (tag === profileId || profileId.toString().startsWith(tag)) {
+                    send('error', { message: `Profile đang được farming (${tag}). Dừng farming trước hoặc chọn profile khác.` });
+                    res.end();
+                    return;
+                }
+            }
+        }
+    }
+
     let conn = null;
+    let genlogin = null;
     try {
-        const { conn: c } = await connectProfile(profileId);
+        const { conn: c, genlogin: g } = await connectProfile(profileId);
         conn = c;
+        genlogin = g;
         const page = conn.page;
 
         const xUsername = await getXUsername(page);
@@ -216,7 +233,8 @@ router.get('/stream', async (req, res) => {
         send('error', { message: err.message });
     } finally {
         res.end();
-        if (conn?.browser) await BrowserManager.disconnect(conn.browser, conn.slotIndex).catch(() => {});
+        if (conn?.browser) await BrowserManager.disconnect(conn.browser).catch(() => {});
+        if (genlogin) await genlogin.stopProfile(profileId).catch(() => {});
     }
 });
 
@@ -228,9 +246,11 @@ router.post('/unfollow', async (req, res) => {
     }
 
     let conn = null;
+    let genlogin = null;
     try {
-        const { conn: c } = await connectProfile(profileId);
+        const { conn: c, genlogin: g } = await connectProfile(profileId);
         conn = c;
+        genlogin = g;
         const page = conn.page;
         const unfollowed = [], failed = [];
 
@@ -258,7 +278,8 @@ router.post('/unfollow', async (req, res) => {
         log.error(`follow/unfollow: ${err.message}`);
         res.status(500).json({ error: err.message });
     } finally {
-        if (conn?.browser) await BrowserManager.disconnect(conn.browser, conn.slotIndex).catch(() => {});
+        if (conn?.browser) await BrowserManager.disconnect(conn.browser).catch(() => {});
+        if (genlogin) await genlogin.stopProfile(profileId).catch(() => {});
     }
 });
 

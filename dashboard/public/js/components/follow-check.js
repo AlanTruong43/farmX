@@ -17,11 +17,10 @@ async function _req(method, url, body) {
 
 const followApi = {
     unfollow: (profileId, usernames) => _req('POST', '/api/follow/unfollow', { profileId, usernames }),
+    saveWindowSize: (width, height) => _req('PUT', '/api/config/follow-check', { width, height }),
 };
 
 let _activeStream = null;
-let _batchStream  = null;
-let _batchStop    = false;
 
 // ─── State (giữ khi chuyển tab dashboard) ────────────────
 let state = {
@@ -36,9 +35,6 @@ let state = {
     filterGold: false,
     loading: false,
     xUsername: null,
-    // batch
-    batchResults: [],   // [{ profileId, username, type, total, followsBack, noFollowBack, blue, gold }]
-    batchRunning: false,
 };
 
 // ─── Render ──────────────────────────────────────────────
@@ -49,7 +45,6 @@ export function render() {
         <p>Kiểm tra danh sách đang theo dõi / người theo dõi và unfollow hàng loạt</p>
     </div>
 
-    <!-- ── Single profile card ── -->
     <div class="card" style="padding:0;overflow:hidden">
 
         <!-- Toolbar -->
@@ -66,6 +61,23 @@ export function render() {
                     Bỏ theo dõi (<span id="fc-sel-num">0</span>)
                 </button>
             </div>
+        </div>
+
+        <!-- Window size settings -->
+        <div style="padding:10px 20px;border-bottom:1px solid var(--border);background:var(--bg-secondary);display:flex;align-items:center;gap:12px">
+            <span style="font-size:12px;color:var(--text-secondary);white-space:nowrap">Kích thước cửa sổ:</span>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary)">
+                Rộng
+                <input type="number" id="fc-win-width" class="form-control" value="1280"
+                       style="width:80px;padding:3px 6px;font-size:12px" min="400" max="3840">
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary)">
+                Cao
+                <input type="number" id="fc-win-height" class="form-control" value="900"
+                       style="width:80px;padding:3px 6px;font-size:12px" min="300" max="2160">
+            </label>
+            <button id="fc-win-save" class="btn" style="padding:3px 10px;font-size:12px">Lưu</button>
+            <span id="fc-win-saved" style="font-size:11px;color:#4ade80;display:none">✓ Đã lưu</span>
         </div>
 
         <!-- Tabs following / followers -->
@@ -117,37 +129,19 @@ export function render() {
                 Chọn profile và nhấn <strong>Tải danh sách</strong>
             </div>
         </div>
-    </div>
-
-    <!-- ── Batch mode card ── -->
-    <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
-        <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
-            <span style="font-weight:600;font-size:14px">Chạy hàng loạt</span>
-            <select id="fc-batch-type" class="form-control" style="width:180px">
-                <option value="following">Đang theo dõi</option>
-                <option value="followers">Người theo dõi</option>
-            </select>
-            <button id="fc-batch-start" class="btn btn-primary" style="min-width:110px">▶ Bắt đầu</button>
-            <button id="fc-batch-stop" class="btn btn-danger" style="display:none;min-width:80px">⏹ Dừng</button>
-            <span id="fc-batch-status" style="font-size:12px;color:var(--text-secondary)"></span>
-        </div>
-
-        <!-- Profile checklist -->
-        <div id="fc-batch-profiles" style="padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--border)">
-            <span style="font-size:13px;color:var(--text-muted)">Đang tải profiles...</span>
-        </div>
-
-        <!-- Batch results table -->
-        <div id="fc-batch-results" style="min-height:60px">
-            <div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">
-                Chọn profiles và nhấn Bắt đầu
-            </div>
-        </div>
     </div>`;
 }
 
 // ─── Init ─────────────────────────────────────────────────
 export async function init() {
+    // Load window size from config
+    try {
+        const cfg = await fetch('/api/config').then(r => r.json());
+        const fcWin = cfg.follow_check_window || {};
+        if (fcWin.width)  document.getElementById('fc-win-width').value  = fcWin.width;
+        if (fcWin.height) document.getElementById('fc-win-height').value = fcWin.height;
+    } catch {}
+
     // Load profiles nếu chưa có
     if (state.profiles.length === 0) {
         try {
@@ -158,7 +152,7 @@ export async function init() {
         }
     }
 
-    // Populate single-profile dropdown
+    // Populate profile dropdown
     const sel = document.getElementById('fc-profile');
     for (const p of state.profiles) {
         const opt = document.createElement('option');
@@ -173,17 +167,11 @@ export async function init() {
         state.selectedProfile = state.profiles[0].genlogin_id;
     }
 
-    // Populate batch profile checklist
-    renderBatchProfiles();
-
     bindEvents();
 
     // Restore UI nếu đã có data từ lần trước
     if (state.users.length > 0) {
         restoreUI();
-    }
-    if (state.batchResults.length > 0) {
-        renderBatchResults();
     }
 }
 
@@ -194,13 +182,11 @@ function restoreUI() {
     }
     document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
     document.getElementById('fc-table-header').style.display = 'block';
-    // Restore tab highlight
     document.querySelectorAll('.fc-tab').forEach(b => {
         const isActive = b.dataset.tab === state.activeTab;
         b.style.borderBottomColor = isActive ? 'var(--accent)' : 'transparent';
         b.style.color = isActive ? 'var(--text-primary)' : 'var(--text-secondary)';
     });
-    // Restore loading state
     if (state.loading) {
         document.getElementById('fc-load').disabled = true;
         document.getElementById('fc-load').textContent = 'Đang tải...';
@@ -219,6 +205,20 @@ function bindEvents() {
     document.getElementById('fc-load').addEventListener('click', loadList);
     document.getElementById('fc-stop').addEventListener('click', stopStream);
 
+    // Window size save
+    document.getElementById('fc-win-save').addEventListener('click', async () => {
+        const w = parseInt(document.getElementById('fc-win-width').value)  || 1280;
+        const h = parseInt(document.getElementById('fc-win-height').value) || 900;
+        try {
+            await followApi.saveWindowSize(w, h);
+            const saved = document.getElementById('fc-win-saved');
+            saved.style.display = 'inline';
+            setTimeout(() => { saved.style.display = 'none'; }, 2000);
+        } catch (err) {
+            toast('Lỗi lưu: ' + err.message, 'error');
+        }
+    });
+
     document.querySelectorAll('.fc-tab').forEach(btn => {
         btn.addEventListener('click', () => {
             if (btn.dataset.tab === state.activeTab) return;
@@ -235,8 +235,8 @@ function bindEvents() {
             document.getElementById('fc-table-header').style.display = 'none';
             document.getElementById('fc-list').innerHTML =
                 '<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Chọn profile và nhấn <strong>Tải danh sách</strong></div>';
-            document.getElementById(`fc-following-count`).textContent = '';
-            document.getElementById(`fc-followers-count`).textContent = '';
+            document.getElementById('fc-following-count').textContent = '';
+            document.getElementById('fc-followers-count').textContent = '';
         });
     });
 
@@ -272,8 +272,6 @@ function bindEvents() {
     });
 
     document.getElementById('fc-unfollow-btn').addEventListener('click', doUnfollow);
-    document.getElementById('fc-batch-start').addEventListener('click', runBatch);
-    document.getElementById('fc-batch-stop').addEventListener('click', stopBatch);
 }
 
 // ─── Stop single stream ───────────────────────────────────
@@ -312,39 +310,55 @@ function loadList() {
         </div>`;
     document.getElementById('fc-xuser').textContent = '';
 
-    openStream(state.selectedProfile, state.activeTab, {
-        onMeta(d) {
-            state.xUsername = d.xUsername;
-            const label = state.activeTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
-            document.getElementById('fc-xuser').textContent = `@${d.xUsername} — ${label}`;
-            document.getElementById('fc-table-header').style.display = 'block';
-            document.getElementById('fc-list').innerHTML = '';
-        },
-        onUser(u) {
-            state.users.push(u);
-            document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
-            if (userPassesFilter(u)) appendUserRow(u);
+    const url = `/api/follow/stream?profileId=${encodeURIComponent(state.selectedProfile)}&type=${state.activeTab}`;
+    const es = new EventSource(url);
+    _activeStream = es;
+
+    es.addEventListener('meta', e => {
+        const d = JSON.parse(e.data);
+        state.xUsername = d.xUsername;
+        const label = state.activeTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
+        document.getElementById('fc-xuser').textContent = `@${d.xUsername} — ${label}`;
+        document.getElementById('fc-table-header').style.display = 'block';
+        document.getElementById('fc-list').innerHTML = '';
+    });
+
+    es.addEventListener('user', e => {
+        const u = JSON.parse(e.data);
+        u.following = null; u.followers = null; u.followsYou = null;
+        state.users.push(u);
+        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
+        if (userPassesFilter(u)) appendUserRow(u);
+        updateResultCount();
+    });
+
+    es.addEventListener('stats', e => {
+        const d = JSON.parse(e.data);
+        const u = state.users.find(x => x.username === d.username);
+        if (u) { u.following = d.following; u.followers = d.followers; u.followsYou = d.followsYou; }
+        updateStatsRow(d.username, d.following, d.followers, d.followsYou);
+        if (state.filterFollowsBack && !d.followsYou) {
+            const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
+            if (row) row.style.display = 'none';
             updateResultCount();
-        },
-        onStats(d) {
-            const u = state.users.find(x => x.username === d.username);
-            if (u) { u.following = d.following; u.followers = d.followers; u.followsYou = d.followsYou; }
-            updateStatsRow(d.username, d.following, d.followers, d.followsYou);
-            if (state.filterFollowsBack && !d.followsYou) {
-                const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
-                if (row) row.style.display = 'none';
-                updateResultCount();
-            }
-        },
-        onDone(d) {
-            toast(`Hoàn thành: ${d.total || state.users.length} người`, 'success');
-            finishSingle();
-        },
-        onError(msg) {
-            toast(msg || 'Kết nối bị đóng', 'error');
-            finishSingle();
-        },
-        setStream(es) { _activeStream = es; },
+        }
+    });
+
+    es.addEventListener('done', e => {
+        const d = JSON.parse(e.data);
+        toast(`Hoàn thành: ${d.total || state.users.length} người`, 'success');
+        finishSingle();
+        es.close();
+        _activeStream = null;
+    });
+
+    es.addEventListener('error', e => {
+        let msg = 'Kết nối bị đóng';
+        try { const d = JSON.parse(e.data); msg = d.message || msg; } catch {}
+        toast(msg, 'error');
+        finishSingle();
+        es.close();
+        _activeStream = null;
     });
 }
 
@@ -359,188 +373,7 @@ function finishSingle() {
     }
 }
 
-// ─── Generic SSE stream opener ────────────────────────────
-function openStream(profileId, type, cbs) {
-    const url = `/api/follow/stream?profileId=${encodeURIComponent(profileId)}&type=${type}`;
-    const es = new EventSource(url);
-    cbs.setStream(es);
-
-    es.addEventListener('meta',  e => cbs.onMeta(JSON.parse(e.data)));
-    es.addEventListener('user',  e => {
-        const u = JSON.parse(e.data);
-        u.following = null; u.followers = null; u.followsYou = null;
-        cbs.onUser(u);
-    });
-    es.addEventListener('stats', e => cbs.onStats(JSON.parse(e.data)));
-    es.addEventListener('done',  e => { cbs.onDone(JSON.parse(e.data)); es.close(); cbs.setStream(null); });
-    es.addEventListener('error', e => {
-        let msg = 'Kết nối stream bị đóng';
-        try { msg = JSON.parse(e.data).message; } catch {}
-        cbs.onError(msg);
-        es.close();
-        cbs.setStream(null);
-    });
-}
-
-// ─── Batch mode ───────────────────────────────────────────
-function renderBatchProfiles() {
-    const container = document.getElementById('fc-batch-profiles');
-    if (!container) return;
-    if (state.profiles.length === 0) {
-        container.innerHTML = '<span style="font-size:13px;color:var(--text-muted)">Không có profile nào</span>';
-        return;
-    }
-    container.innerHTML = state.profiles.map(p => `
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;
-               padding:6px 10px;border:1px solid var(--border);border-radius:6px;
-               background:var(--bg-secondary);white-space:nowrap">
-            <input type="checkbox" class="fc-batch-profile-cb" value="${p.genlogin_id}" checked
-                   style="accent-color:var(--accent)">
-            ${escHtml(p.username || p.genlogin_id)}
-        </label>
-    `).join('');
-}
-
-async function runBatch() {
-    const checkboxes = document.querySelectorAll('.fc-batch-profile-cb:checked');
-    if (checkboxes.length === 0) { toast('Chọn ít nhất 1 profile', 'error'); return; }
-    if (state.batchRunning) return;
-
-    const profileIds = [...checkboxes].map(cb => cb.value);
-    const type = document.getElementById('fc-batch-type').value;
-
-    state.batchRunning = true;
-    _batchStop = false;
-    state.batchResults = [];
-
-    document.getElementById('fc-batch-start').style.display = 'none';
-    document.getElementById('fc-batch-stop').style.display = 'inline-flex';
-    document.getElementById('fc-batch-results').innerHTML = '';
-
-    for (let i = 0; i < profileIds.length; i++) {
-        if (_batchStop) break;
-
-        const profileId = profileIds[i];
-        const profile = state.profiles.find(p => p.genlogin_id === profileId);
-        const profileName = profile?.username || profileId;
-
-        document.getElementById('fc-batch-status').textContent =
-            `Đang xử lý ${i + 1}/${profileIds.length}: @${profileName}`;
-
-        // Thêm row đang chạy vào bảng
-        const rowId = `fc-batch-row-${profileId}`;
-        appendBatchRow(rowId, profileName, type, null);
-
-        const result = await new Promise(resolve => {
-            const stats = { total: 0, followsBack: 0, noFollowBack: 0, blue: 0, gold: 0, xUsername: profileName };
-
-            openStream(profileId, type, {
-                onMeta(d) { stats.xUsername = d.xUsername; updateBatchRow(rowId, stats, 'running'); },
-                onUser(u) {
-                    stats.total++;
-                    if (u.verifiedType === 'blue') stats.blue++;
-                    if (u.verifiedType === 'gold') stats.gold++;
-                    updateBatchRow(rowId, stats, 'running');
-                },
-                onStats(d) {
-                    if (d.followsYou) stats.followsBack++;
-                    else stats.noFollowBack++;
-                    updateBatchRow(rowId, stats, 'running');
-                },
-                onDone() { resolve({ ...stats, profileId, status: 'done' }); },
-                onError(msg) { resolve({ ...stats, profileId, status: 'error', error: msg }); },
-                setStream(es) { _batchStream = es; },
-            });
-        });
-
-        state.batchResults.push(result);
-        updateBatchRow(rowId, result, result.status);
-
-        if (_batchStop) break;
-    }
-
-    state.batchRunning = false;
-    _batchStream = null;
-    document.getElementById('fc-batch-start').style.display = 'inline-flex';
-    document.getElementById('fc-batch-stop').style.display = 'none';
-    document.getElementById('fc-batch-status').textContent =
-        _batchStop ? 'Đã dừng' : `Xong ${state.batchResults.length} profiles`;
-}
-
-function stopBatch() {
-    _batchStop = true;
-    if (_batchStream) { _batchStream.close(); _batchStream = null; }
-    state.batchRunning = false;
-    document.getElementById('fc-batch-start').style.display = 'inline-flex';
-    document.getElementById('fc-batch-stop').style.display = 'none';
-    document.getElementById('fc-batch-status').textContent = 'Đã dừng';
-    toast('Đã dừng batch', 'info');
-}
-
-function appendBatchRow(rowId, profileName, type, stats) {
-    const container = document.getElementById('fc-batch-results');
-
-    // Header nếu chưa có
-    if (!document.getElementById('fc-batch-thead')) {
-        const thead = document.createElement('div');
-        thead.id = 'fc-batch-thead';
-        thead.style.cssText = 'display:grid;grid-template-columns:140px 120px 80px 100px 120px 80px 80px 80px;gap:8px;padding:8px 20px;background:var(--bg-tertiary);border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px';
-        thead.innerHTML = `
-            <span>Profile</span>
-            <span>Loại</span>
-            <span style="text-align:right">Tổng</span>
-            <span style="text-align:right">Follow lại</span>
-            <span style="text-align:right">Không follow lại</span>
-            <span style="text-align:center">${svgBlueTick()}</span>
-            <span style="text-align:center">${svgGoldTick()}</span>
-            <span style="text-align:center">Trạng thái</span>`;
-        container.appendChild(thead);
-    }
-
-    const row = document.createElement('div');
-    row.id = rowId;
-    row.style.cssText = 'display:grid;grid-template-columns:140px 120px 80px 100px 120px 80px 80px 80px;gap:8px;padding:9px 20px;border-bottom:1px solid var(--border);font-size:13px;align-items:center';
-    const typeLabel = type === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
-    row.innerHTML = `
-        <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@${escHtml(profileName)}</span>
-        <span style="font-size:12px;color:var(--text-secondary)">${typeLabel}</span>
-        <span id="${rowId}-total" style="text-align:right;color:var(--text-secondary)">—</span>
-        <span id="${rowId}-fb"    style="text-align:right;color:#4ade80">—</span>
-        <span id="${rowId}-nfb"   style="text-align:right;color:var(--text-secondary)">—</span>
-        <span id="${rowId}-blue"  style="text-align:center;color:var(--text-secondary)">—</span>
-        <span id="${rowId}-gold"  style="text-align:center;color:var(--text-secondary)">—</span>
-        <span id="${rowId}-status" style="text-align:center;font-size:11px;color:var(--text-muted)">⏳</span>`;
-    container.appendChild(row);
-}
-
-function updateBatchRow(rowId, stats, status) {
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set(`${rowId}-total`,  stats.total   || '—');
-    set(`${rowId}-fb`,     stats.followsBack  || '—');
-    set(`${rowId}-nfb`,    stats.noFollowBack || '—');
-    set(`${rowId}-blue`,   stats.blue    || '—');
-    set(`${rowId}-gold`,   stats.gold    || '—');
-    const statusEl = document.getElementById(`${rowId}-status`);
-    if (statusEl) {
-        if (status === 'running') statusEl.textContent = '⏳';
-        else if (status === 'done') statusEl.textContent = '✅';
-        else if (status === 'error') { statusEl.textContent = '❌'; statusEl.title = stats.error || ''; }
-    }
-}
-
-function renderBatchResults() {
-    // Re-render batch table from state.batchResults
-    document.getElementById('fc-batch-results').innerHTML = '';
-    for (const r of state.batchResults) {
-        const profile = state.profiles.find(p => p.genlogin_id === r.profileId);
-        const name = r.xUsername || profile?.username || r.profileId;
-        const type = document.getElementById('fc-batch-type')?.value || 'following';
-        appendBatchRow(`fc-batch-row-${r.profileId}`, name, type, r);
-        updateBatchRow(`fc-batch-row-${r.profileId}`, r, r.status);
-    }
-}
-
-// ─── Single profile table helpers ────────────────────────
+// ─── Table helpers ────────────────────────────────────────
 function appendUserRow(u) {
     const list = document.getElementById('fc-list');
     const div = document.createElement('div');
@@ -736,5 +569,4 @@ function svgGoldTick() {
 export function destroy() {
     // Chỉ đóng stream — giữ data để restore khi quay lại
     if (_activeStream) { _activeStream.close(); _activeStream = null; }
-    // Không clear state.users
 }

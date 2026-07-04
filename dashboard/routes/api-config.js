@@ -145,6 +145,21 @@ router.put('/general', (req, res) => {
     }
 });
 
+// PUT /api/config/follow-check — cập nhật follow check window size
+router.put('/follow-check', (req, res) => {
+    try {
+        const config = readConfig();
+        const update = req.body;
+        if (!config.follow_check_window) config.follow_check_window = {};
+        if (update.width  !== undefined) config.follow_check_window.width  = parseInt(update.width)  || 1280;
+        if (update.height !== undefined) config.follow_check_window.height = parseInt(update.height) || 900;
+        writeConfig(config);
+        res.json({ ok: true, follow_check_window: config.follow_check_window });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // PUT /api/config/sheets — cập nhật Google Sheets settings
 router.put('/sheets', (req, res) => {
     try {
