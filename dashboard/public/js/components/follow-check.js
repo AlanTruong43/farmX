@@ -389,9 +389,9 @@ function finishSingle() {
 // ─── Table helpers ────────────────────────────────────────
 function appendUserRow(u) {
     const list = document.getElementById('fc-list');
-    const div = document.createElement('div');
-    div.innerHTML = userRowHtml(u);
-    const row = div.firstElementChild;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = userRowHtml(u);
+    const row = tmp.firstElementChild; // outer wrapper div (id=fc-row-*)
     list.appendChild(row);
     const cb = row.querySelector('.fc-user-check');
     if (cb) cb.addEventListener('change', onCheckboxChange);
@@ -401,6 +401,7 @@ function onCheckboxChange(e) {
     const username = e.target.dataset.username;
     if (e.target.checked) state.selected.add(username);
     else state.selected.delete(username);
+    // fc-row-* is the outer wrapper div
     const row = document.getElementById(`fc-row-${CSS.escape(username)}`);
     if (row) row.style.background = e.target.checked ? 'rgba(88,166,255,0.07)' : '';
     updateSelCount();
@@ -502,29 +503,7 @@ function userRowHtml(u) {
         : u.verifiedType === 'gold' ? svgGoldTick()
         : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
 
-    return `
-    <div id="fc-row-${escAttr(u.username)}"
-         style="display:grid;grid-template-columns:36px 1fr 100px 100px 110px 70px;gap:8px;align-items:center;padding:9px 20px;border-bottom:1px solid var(--border);${isSelected ? 'background:rgba(88,166,255,0.07)' : ''}">
-        <div style="display:flex;align-items:center;justify-content:center">
-            <input type="checkbox" class="fc-user-check" data-username="${escAttr(u.username)}" ${isSelected ? 'checked' : ''}
-                   style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;min-width:0">
-            ${avatarHtml}
-            <div style="min-width:0">
-                <div style="font-size:13px;font-weight:500">
-                    <a href="https://x.com/${escAttr(u.username)}" target="_blank"
-                       style="color:var(--text-primary);text-decoration:none;max-width:160px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-                       title="${escAttr(u.displayName || u.username)}">${escHtml(u.displayName || u.username)}</a>
-                </div>
-                <div style="font-size:11px;color:var(--text-secondary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@${escHtml(u.username)}</div>
-            </div>
-        </div>
-        <div id="fc-col-following-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div>
-        <div id="fc-col-followers-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div>
-        <div id="fc-col-followsyou-${escAttr(u.username)}" style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div>
-        <div style="display:flex;align-items:center;justify-content:center">${tickHtml}</div>
-    </div>`;
+    return `<div id="fc-row-${escAttr(u.username)}" style="border-bottom:1px solid var(--border);${isSelected ? 'background:rgba(88,166,255,0.07)' : ''}"><div style="display:grid;grid-template-columns:36px 1fr 100px 100px 110px 70px;gap:8px;align-items:center;padding:9px 20px;box-sizing:border-box;width:100%"><div style="display:flex;align-items:center;justify-content:center"><input type="checkbox" class="fc-user-check" data-username="${escAttr(u.username)}" ${isSelected ? 'checked' : ''} style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"></div><div style="display:flex;align-items:center;gap:10px;min-width:0">${avatarHtml}<div style="min-width:0"><div style="font-size:13px;font-weight:500"><a href="https://x.com/${escAttr(u.username)}" target="_blank" style="color:var(--text-primary);text-decoration:none;max-width:200px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(u.displayName || u.username)}">${escHtml(u.displayName || u.username)}</a></div><div style="font-size:11px;color:var(--text-secondary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@${escHtml(u.username)}</div></div></div><div id="fc-col-following-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div><div id="fc-col-followers-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div><div id="fc-col-followsyou-${escAttr(u.username)}" style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div><div style="display:flex;align-items:center;justify-content:center">${tickHtml}</div></div></div>`;
 }
 
 // ─── Unfollow ────────────────────────────────────────────
