@@ -92,7 +92,11 @@ router.get('/stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
+    let clientClosed = false;
+    req.on('close', () => { clientClosed = true; });
+
     const send = (event, data) => {
+        if (clientClosed) return;
         try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
     };
 
@@ -115,7 +119,7 @@ router.get('/stream', async (req, res) => {
         let noNewCount = 0;
 
         while (noNewCount < 4) {
-            if (res.writableEnded) break;
+            if (clientClosed || res.writableEnded) break;
 
             // Lấy tất cả UserCell hiện tại + toạ độ viewport của chúng
             const cells = await page.evaluate(() => {
