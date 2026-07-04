@@ -16,9 +16,10 @@ async function _req(method, url, body) {
 }
 
 const followApi = {
-    scrape:   (profileId, type)      => _req('POST', '/api/follow/scrape',   { profileId, type }),
     unfollow: (profileId, usernames) => _req('POST', '/api/follow/unfollow', { profileId, usernames }),
 };
+
+let _activeStream = null;
 
 // ─── State ───────────────────────────────────────────────
 let state = {
@@ -209,13 +210,17 @@ function bindEvents() {
     document.getElementById('fc-unfollow-btn').addEventListener('click', doUnfollow);
 }
 
-// ─── Load list ───────────────────────────────────────────
-async function loadList() {
+// ─── Load list via SSE stream ────────────────────────────
+function loadList() {
     if (!state.selectedProfile) { toast('Chọn profile trước', 'error'); return; }
     if (state.loading) return;
 
+    // Huỷ stream cũ nếu có
+    if (_activeStream) { _activeStream.close(); _activeStream = null; }
+
     state.loading = true;
     state.users = [];
+    state.stats = {};
     state.selected.clear();
 
     const loadBtn = document.getElementById('fc-load');
@@ -227,80 +232,154 @@ async function loadList() {
     document.getElementById('fc-table-header').style.display = 'none';
     document.getElementById('fc-list').innerHTML = `
         <div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
-            ⏳ Đang scrape danh sách ${tabLabel}...<br>
-            <span style="font-size:11px;margin-top:6px;display:block">(có thể mất 1–3 phút tuỳ số lượng)</span>
+            ⏳ Đang kết nối profile và mở danh sách ${tabLabel}...<br>
+            <span style="font-size:11px;margin-top:6px;display:block">Kết quả sẽ hiển thị dần từng người</span>
         </div>`;
     document.getElementById('fc-xuser').textContent = '';
 
-    try {
-        const res = await followApi.scrape(state.selectedProfile, state.activeTab);
-        state.users = res.users || [];
-        state.xUsername = res.xUsername;
+    const url = `/api/follow/stream?profileId=${encodeURIComponent(state.selectedProfile)}&type=${state.activeTab}`;
+    const es = new EventSource(url);
+    _activeStream = es;
 
-        const tabLabel2 = state.activeTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
-        document.getElementById('fc-xuser').textContent = `@${res.xUsername} — ${tabLabel2}`;
-        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
-
+    es.addEventListener('meta', e => {
+        const d = JSON.parse(e.data);
+        state.xUsername = d.xUsername;
+        const label = state.activeTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
+        document.getElementById('fc-xuser').textContent = `@${d.xUsername} — ${label}`;
         document.getElementById('fc-table-header').style.display = 'block';
-        renderList();
-        updateSelCount();
-    } catch (err) {
-        toast('Lỗi scrape: ' + err.message, 'error');
-        document.getElementById('fc-list').innerHTML = `
-            <div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
-                ❌ ${escHtml(err.message)}
-            </div>`;
-    } finally {
-        state.loading = false;
-        loadBtn.disabled = false;
-        loadText.textContent = 'Tải danh sách';
-    }
-}
+        document.getElementById('fc-list').innerHTML = '';
+    });
 
-// ─── Render list ─────────────────────────────────────────
-function getFiltered() {
-    return state.users.filter(u => {
-        if (state.search) {
-            const q = state.search;
-            if (!u.username.toLowerCase().includes(q) && !(u.displayName || '').toLowerCase().includes(q)) return false;
+    es.addEventListener('user', e => {
+        const u = JSON.parse(e.data);
+        // Thêm vào state với stats placeholder
+        u.following = null; u.followers = null; u.followsYou = null;
+        state.users.push(u);
+        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
+        // Append row nếu user pass filter
+        if (userPassesFilter(u)) appendUserRow(u);
+        updateResultCount();
+    });
+
+    es.addEventListener('stats', e => {
+        const d = JSON.parse(e.data);
+        // Cập nhật state
+        const u = state.users.find(x => x.username === d.username);
+        if (u) { u.following = d.following; u.followers = d.followers; u.followsYou = d.followsYou; }
+        // Cập nhật cells trong table
+        updateStatsRow(d.username, d.following, d.followers, d.followsYou);
+        // Nếu filter followsBack đang bật và user không pass → ẩn row
+        if ((state.filterFollowsBack && !d.followsYou)) {
+            const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
+            if (row) row.style.display = 'none';
+            updateResultCount();
         }
-        if (state.filterFollowsBack && !u.followsYou) return false;
-        if (state.filterBlue && u.verifiedType !== 'blue') return false;
-        if (state.filterGold && u.verifiedType !== 'gold') return false;
-        return true;
+    });
+
+    es.addEventListener('done', e => {
+        const d = JSON.parse(e.data);
+        toast(`Hoàn thành: ${d.total || state.users.length} người`, 'success');
+        finishLoading(loadBtn, loadText);
+        es.close();
+        _activeStream = null;
+    });
+
+    es.addEventListener('error', e => {
+        try {
+            const d = JSON.parse(e.data);
+            toast('Lỗi: ' + d.message, 'error');
+        } catch {
+            if (es.readyState === EventSource.CLOSED) toast('Kết nối stream bị đóng', 'error');
+        }
+        finishLoading(loadBtn, loadText);
+        es.close();
+        _activeStream = null;
     });
 }
 
+function finishLoading(loadBtn, loadText) {
+    state.loading = false;
+    loadBtn.disabled = false;
+    loadText.textContent = 'Tải danh sách';
+    if (state.users.length === 0) {
+        document.getElementById('fc-list').innerHTML =
+            '<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Không có dữ liệu</div>';
+    }
+}
+
+// Append 1 row vào cuối table (không re-render toàn bộ)
+function appendUserRow(u) {
+    const list = document.getElementById('fc-list');
+    const div = document.createElement('div');
+    div.innerHTML = userRowHtml(u);
+    const row = div.firstElementChild;
+    list.appendChild(row);
+    // Bind checkbox
+    const cb = row.querySelector('.fc-user-check');
+    if (cb) cb.addEventListener('change', onCheckboxChange);
+}
+
+function onCheckboxChange(e) {
+    const username = e.target.dataset.username;
+    if (e.target.checked) state.selected.add(username);
+    else state.selected.delete(username);
+    const row = document.getElementById(`fc-row-${CSS.escape(username)}`);
+    if (row) row.style.background = e.target.checked ? 'rgba(88,166,255,0.07)' : '';
+    updateSelCount();
+}
+
+// Cập nhật cells stats của 1 row đã có trong DOM
+function updateStatsRow(username, following, followers, followsYou) {
+    const fEl = document.getElementById(`fc-col-following-${CSS.escape(username)}`);
+    const rEl = document.getElementById(`fc-col-followers-${CSS.escape(username)}`);
+    const fyEl = document.getElementById(`fc-col-followsyou-${CSS.escape(username)}`);
+
+    if (fEl) fEl.textContent = following !== null ? formatCount(following) : '—';
+    if (rEl) rEl.textContent = followers !== null ? formatCount(followers) : '—';
+    if (fyEl) {
+        fyEl.innerHTML = followsYou
+            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(88,166,255,.15)"><svg viewBox="0 0 12 12" width="11" height="11" fill="none"><polyline points="1,6 5,10 11,2" stroke="#58a6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+            : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
+    }
+}
+
+function userPassesFilter(u) {
+    if (state.search) {
+        const q = state.search;
+        if (!u.username.toLowerCase().includes(q) && !(u.displayName || '').toLowerCase().includes(q)) return false;
+    }
+    if (state.filterBlue && u.verifiedType !== 'blue') return false;
+    if (state.filterGold && u.verifiedType !== 'gold') return false;
+    // followsBack filter chỉ apply sau khi stats về
+    return true;
+}
+
+function updateResultCount() {
+    const visible = document.querySelectorAll('#fc-list > div[id^="fc-row-"]:not([style*="display: none"])').length;
+    document.getElementById('fc-result-count').textContent =
+        state.users.length > 0 ? `Hiển thị ${visible} / ${state.users.length}` : '';
+}
+
+// ─── Re-render list khi filter thay đổi ─────────────────
 function renderList() {
     const list = document.getElementById('fc-list');
-    const filtered = getFiltered();
-
-    document.getElementById('fc-result-count').textContent =
-        state.users.length > 0
-            ? `Hiển thị ${filtered.length} / ${state.users.length}`
-            : '';
-
     if (state.users.length === 0) {
         list.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Chưa có dữ liệu</div>`;
         return;
     }
-    if (filtered.length === 0) {
-        list.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Không tìm thấy kết quả phù hợp</div>`;
-        return;
+
+    list.innerHTML = '';
+    for (const u of state.users) {
+        if (!userPassesFilter(u)) continue;
+        if (state.filterFollowsBack && !u.followsYou) continue;
+        const div = document.createElement('div');
+        div.innerHTML = userRowHtml(u);
+        const row = div.firstElementChild;
+        list.appendChild(row);
+        const cb = row.querySelector('.fc-user-check');
+        if (cb) cb.addEventListener('change', onCheckboxChange);
     }
-
-    list.innerHTML = filtered.map(u => userRowHtml(u)).join('');
-
-    list.querySelectorAll('.fc-user-check').forEach(cb => {
-        cb.addEventListener('change', e => {
-            const username = e.target.dataset.username;
-            if (e.target.checked) state.selected.add(username);
-            else state.selected.delete(username);
-            const row = document.getElementById(`fc-row-${CSS.escape(username)}`);
-            if (row) row.style.background = e.target.checked ? 'rgba(88,166,255,0.07)' : '';
-            updateSelCount();
-        });
-    });
+    updateResultCount();
 }
 
 function userRowHtml(u) {
@@ -351,9 +430,9 @@ function userRowHtml(u) {
             </div>
         </div>
 
-        <div style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div>
-        <div style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div>
-        <div style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div>
+        <div id="fc-col-following-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div>
+        <div id="fc-col-followers-${escAttr(u.username)}" style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div>
+        <div id="fc-col-followsyou-${escAttr(u.username)}" style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div>
         <div style="display:flex;align-items:center;justify-content:center">${tickHtml}</div>
     </div>`;
 }
@@ -446,6 +525,8 @@ function svgGoldTick() {
 }
 
 export function destroy() {
+    if (_activeStream) { _activeStream.close(); _activeStream = null; }
     state.users = [];
     state.selected = new Set();
+    state.stats = {};
 }
