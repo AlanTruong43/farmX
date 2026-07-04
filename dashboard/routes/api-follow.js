@@ -1,7 +1,6 @@
 /**
  * Follow Check API
- * POST /api/follow/scrape   — scrape following/followers list
- * POST /api/follow/stats    — fetch following/followers count per user (batch)
+ * POST /api/follow/scrape   — scrape following/followers list (includes stats via GraphQL intercept)
  * POST /api/follow/unfollow — unfollow selected users
  */
 const express = require('express');
@@ -41,106 +40,147 @@ async function getXUsername(page) {
     return username;
 }
 
-async function scrapeList(page, xUsername, type) {
-    page.once('dialog', async d => { await d.accept().catch(() => {}); });
-    await page.goto(`https://x.com/${xUsername}/${type}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await sleep(2500);
+/**
+ * Duyệt đệ quy JSON response từ GraphQL của X để tìm user data
+ * Điền vào gqlData map: username -> { avatarUrl, following, followers, isBlueVerified, isGoldVerified }
+ */
+function walkForUsers(obj, gqlData, depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 20) return;
 
-    const users = new Map();
-    let noNewCount = 0;
-
-    while (noNewCount < 4) {
-        const batch = await page.evaluate(() => {
-            const cells = document.querySelectorAll('[data-testid="UserCell"]');
-            const out = [];
-            for (const cell of cells) {
-                let username = null;
-                const links = cell.querySelectorAll('a[href^="/"][role="link"]');
-                for (const link of links) {
-                    const href = link.getAttribute('href') || '';
-                    const parts = href.split('/').filter(Boolean);
-                    if (parts.length === 1 && !href.includes('/i/')) {
-                        username = parts[0];
-                        break;
-                    }
-                }
-                if (!username) continue;
-
-                const nameEl = cell.querySelector('div[dir="ltr"] span span');
-                const displayName = nameEl ? nameEl.textContent.trim() : username;
-                const isVerified = !!cell.querySelector('[data-testid="icon-verified"]');
-                const followsYou = !!cell.querySelector('[data-testid="userFollowIndicator"]');
-
-                out.push({ username, displayName, isVerified, followsYou });
-            }
-            return out;
-        }).catch(() => []);
-
-        let added = 0;
-        for (const u of batch) {
-            if (u.username && !users.has(u.username)) {
-                users.set(u.username, u);
-                added++;
-            }
+    // Pattern: { user_results: { result: { legacy: {...}, is_blue_verified, affiliates_highlighted_label } } }
+    if (obj.user_results?.result?.legacy) {
+        const result = obj.user_results.result;
+        const legacy = result.legacy;
+        const username = legacy?.screen_name;
+        if (username) {
+            gqlData.set(username.toLowerCase(), {
+                avatarUrl: (legacy.profile_image_url_https || '').replace('_normal', '_bigger'),
+                following: legacy.friends_count ?? null,
+                followers: legacy.followers_count ?? null,
+                isBlueVerified: result.is_blue_verified === true,
+                isGoldVerified: !!(result.affiliates_highlighted_label?.label?.badge?.url),
+            });
         }
-
-        if (added === 0) noNewCount++;
-        else noNewCount = 0;
-
-        await page.evaluate(() => window.scrollBy(0, 1200));
-        await sleep(1600);
+        return;
     }
 
-    return Array.from(users.values());
+    if (Array.isArray(obj)) {
+        for (const item of obj) walkForUsers(item, gqlData, depth + 1);
+    } else {
+        for (const val of Object.values(obj)) {
+            if (val && typeof val === 'object') walkForUsers(val, gqlData, depth + 1);
+        }
+    }
 }
 
-async function fetchStats(page, usernames) {
-    const stats = {};
-    for (const username of usernames) {
+async function scrapeList(page, xUsername, type) {
+    const gqlData = new Map();
+
+    // Intercept X GraphQL responses — lấy avatar, counts, verified type mà không cần navigate thêm
+    const onResponse = async (res) => {
+        const url = res.url();
+        if (!url.includes('/graphql/')) return;
+        const lower = url.toLowerCase();
+        if (!lower.includes('following') && !lower.includes('followers')) return;
         try {
-            page.once('dialog', async d => { await d.accept().catch(() => {}); });
-            await page.goto(`https://x.com/${username}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-            await sleep(1200);
+            const json = await res.json().catch(() => null);
+            if (json) walkForUsers(json, gqlData);
+        } catch {}
+    };
 
-            const data = await page.evaluate(() => {
-                const parse = (text) => {
-                    if (!text) return null;
-                    text = text.trim().replace(/,/g, '');
-                    if (text.endsWith('K')) return Math.round(parseFloat(text) * 1000);
-                    if (text.endsWith('M')) return Math.round(parseFloat(text) * 1000000);
-                    const n = parseInt(text);
-                    return isNaN(n) ? null : n;
-                };
+    page.on('response', onResponse);
 
-                let following = null, followers = null;
+    try {
+        page.once('dialog', async d => { await d.accept().catch(() => {}); });
+        await page.goto(`https://x.com/${xUsername}/${type}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await sleep(2500);
 
-                const followingLink = document.querySelector('a[href$="/following"]');
-                if (followingLink) {
-                    const s = followingLink.querySelector('span[dir="ltr"] > span') ||
-                              followingLink.querySelector('span');
-                    following = parse(s?.textContent);
-                }
+        const users = new Map();
+        let noNewCount = 0;
 
-                // followers: try verified_followers first, then followers
-                for (const suffix of ['/verified_followers', '/followers_you_follow', '/followers']) {
-                    const link = document.querySelector(`a[href$="${suffix}"]`);
-                    if (link) {
-                        const s = link.querySelector('span[dir="ltr"] > span') ||
-                                  link.querySelector('span');
-                        const v = parse(s?.textContent);
-                        if (v !== null) { followers = v; break; }
+        while (noNewCount < 4) {
+            const batch = await page.evaluate(() => {
+                const cells = document.querySelectorAll('[data-testid="UserCell"]');
+                const out = [];
+                for (const cell of cells) {
+                    // Username từ link
+                    let username = null;
+                    const links = cell.querySelectorAll('a[href^="/"][role="link"]');
+                    for (const link of links) {
+                        const href = link.getAttribute('href') || '';
+                        const parts = href.split('/').filter(Boolean);
+                        if (parts.length === 1 && !href.includes('/i/')) {
+                            username = parts[0];
+                            break;
+                        }
                     }
+                    if (!username) continue;
+
+                    // Display name
+                    const nameEl = cell.querySelector('div[dir="ltr"] span span');
+                    const displayName = nameEl ? nameEl.textContent.trim() : username;
+
+                    // Avatar URL từ img tag
+                    const img = cell.querySelector('img[src*="profile_images"]') || cell.querySelector('img[src*="pbs.twimg"]');
+                    const avatarUrl = img ? img.src.replace('_normal', '_bigger') : null;
+
+                    // Follows you
+                    const followsYou = !!cell.querySelector('[data-testid="userFollowIndicator"]');
+
+                    // Verified type — kiểm tra màu SVG (blue #1d9bf0, gold #FFD400)
+                    let verifiedType = null;
+                    const verifiedEl = cell.querySelector('[data-testid="icon-verified"]');
+                    if (verifiedEl) {
+                        const html = verifiedEl.innerHTML || '';
+                        const outerHtml = verifiedEl.outerHTML || '';
+                        if (/FFD400|ffd400|f4d144|gold/i.test(html + outerHtml)) {
+                            verifiedType = 'gold';
+                        } else {
+                            verifiedType = 'blue';
+                        }
+                    }
+
+                    out.push({ username, displayName, avatarUrl, followsYou, verifiedType });
                 }
+                return out;
+            }).catch(() => []);
 
-                return { following, followers };
-            });
+            let added = 0;
+            for (const u of batch) {
+                if (u.username && !users.has(u.username.toLowerCase())) {
+                    users.set(u.username.toLowerCase(), u);
+                    added++;
+                }
+            }
 
-            stats[username] = data;
-        } catch {
-            stats[username] = { following: null, followers: null };
+            if (added === 0) noNewCount++;
+            else noNewCount = 0;
+
+            await page.evaluate(() => window.scrollBy(0, 1200));
+            await sleep(1600);
         }
+
+        // Đợi thêm chút để các response cuối cùng về xong
+        await sleep(1000);
+
+        // Merge GQL data vào users
+        const result = [];
+        for (const [key, user] of users) {
+            const gql = gqlData.get(key);
+            if (gql) {
+                if (!user.avatarUrl && gql.avatarUrl) user.avatarUrl = gql.avatarUrl;
+                user.following = gql.following;
+                user.followers = gql.followers;
+                if (gql.isBlueVerified) user.verifiedType = 'blue';
+                if (gql.isGoldVerified) user.verifiedType = 'gold';
+            }
+            result.push(user);
+        }
+
+        return result;
+    } finally {
+        page.off('response', onResponse);
     }
-    return stats;
 }
 
 async function unfollowUsers(page, usernames) {
@@ -178,7 +218,7 @@ async function unfollowUsers(page, usernames) {
 router.post('/scrape', async (req, res) => {
     const { profileId, type } = req.body;
     if (!profileId || !['following', 'followers'].includes(type)) {
-        return res.status(400).json({ error: 'Thiếu profileId hoặc type không hợp lệ' });
+        return res.status(400).json({ error: 'Thiếu profileId hoặc type không hợp lệ (following | followers)' });
     }
 
     let conn = null;
@@ -193,28 +233,6 @@ router.post('/scrape', async (req, res) => {
         res.json({ ok: true, xUsername, type, users, total: users.length });
     } catch (err) {
         log.error(`follow/scrape: ${err.message}`);
-        res.status(500).json({ error: err.message });
-    } finally {
-        if (conn?.browser) await BrowserManager.disconnect(conn.browser, conn.slotIndex).catch(() => {});
-    }
-});
-
-// ─── POST /api/follow/stats ──────────────────────────────
-router.post('/stats', async (req, res) => {
-    const { profileId, usernames } = req.body;
-    if (!profileId || !Array.isArray(usernames) || usernames.length === 0) {
-        return res.status(400).json({ error: 'Thiếu profileId hoặc usernames[]' });
-    }
-
-    let conn = null;
-    try {
-        const { conn: c } = await connectProfile(profileId);
-        conn = c;
-
-        const stats = await fetchStats(conn.page, usernames);
-        res.json({ ok: true, stats });
-    } catch (err) {
-        log.error(`follow/stats: ${err.message}`);
         res.status(500).json({ error: err.message });
     } finally {
         if (conn?.browser) await BrowserManager.disconnect(conn.browser, conn.slotIndex).catch(() => {});

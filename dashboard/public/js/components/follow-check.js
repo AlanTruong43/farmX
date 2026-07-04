@@ -1,15 +1,8 @@
 /**
- * Follow Check — scrape following/followers, show stats, bulk unfollow
+ * Follow Check — scrape following/followers, hiển thị dạng table, bulk unfollow
  */
 import { api } from '../api.js';
 import { toast } from '../app.js';
-
-// ─── extend api ──────────────────────────────────────────
-const followApi = {
-    scrape:   (profileId, type)       => _req('POST', '/api/follow/scrape',   { profileId, type }),
-    stats:    (profileId, usernames)  => _req('POST', '/api/follow/stats',    { profileId, usernames }),
-    unfollow: (profileId, usernames)  => _req('POST', '/api/follow/unfollow', { profileId, usernames }),
-};
 
 async function _req(method, url, body) {
     const res = await fetch(url, {
@@ -22,17 +15,22 @@ async function _req(method, url, body) {
     return data;
 }
 
+const followApi = {
+    scrape:   (profileId, type)      => _req('POST', '/api/follow/scrape',   { profileId, type }),
+    unfollow: (profileId, usernames) => _req('POST', '/api/follow/unfollow', { profileId, usernames }),
+};
+
 // ─── State ───────────────────────────────────────────────
 let state = {
     profiles: [],
     selectedProfile: null,
     activeTab: 'following',
-    users: [],           // full list (current tab)
-    stats: {},           // username -> { following, followers }
-    statsLoading: false,
+    users: [],
     selected: new Set(),
     search: '',
     filterFollowsBack: false,
+    filterBlue: false,
+    filterGold: false,
     loading: false,
     xUsername: null,
 };
@@ -42,7 +40,7 @@ export function render() {
     return `
     <div class="page-header">
         <h2>Follow Check</h2>
-        <p>Kiểm tra following/followers và unfollow hàng loạt</p>
+        <p>Kiểm tra danh sách đang theo dõi / người theo dõi và unfollow hàng loạt</p>
     </div>
 
     <div class="card" style="padding:0;overflow:hidden">
@@ -52,64 +50,80 @@ export function render() {
             <select id="fc-profile" class="form-control" style="width:200px">
                 <option value="">Chọn profile...</option>
             </select>
-            <button id="fc-load" class="btn btn-primary" style="min-width:90px">
-                <span id="fc-load-text">Load</span>
+            <button id="fc-load" class="btn btn-primary" style="min-width:100px">
+                <span id="fc-load-text">Tải danh sách</span>
             </button>
             <div id="fc-xuser" style="font-size:12px;color:var(--text-secondary)"></div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
                 <span id="fc-sel-count" style="font-size:12px;color:var(--text-secondary)"></span>
                 <button id="fc-unfollow-btn" class="btn btn-danger" style="display:none">
-                    Unfollow (<span id="fc-sel-num">0</span>)
+                    Bỏ theo dõi (<span id="fc-sel-num">0</span>)
                 </button>
             </div>
         </div>
 
         <!-- Tabs -->
         <div style="display:flex;border-bottom:1px solid var(--border)">
-            <button class="fc-tab active" data-tab="following" style="padding:10px 20px;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--text-primary);cursor:pointer;font-size:13px">
-                Following <span id="fc-following-count" class="fc-badge"></span>
+            <button class="fc-tab active" data-tab="following"
+                style="padding:10px 20px;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--text-primary);cursor:pointer;font-size:13px;font-weight:500">
+                Đang theo dõi <span id="fc-following-count" style="font-size:11px;padding:1px 7px;background:var(--bg-tertiary);border-radius:10px;margin-left:4px"></span>
             </button>
-            <button class="fc-tab" data-tab="followers" style="padding:10px 20px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-secondary);cursor:pointer;font-size:13px">
-                Followers <span id="fc-followers-count" class="fc-badge"></span>
+            <button class="fc-tab" data-tab="followers"
+                style="padding:10px 20px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-secondary);cursor:pointer;font-size:13px;font-weight:500">
+                Người theo dõi <span id="fc-followers-count" style="font-size:11px;padding:1px 7px;background:var(--bg-tertiary);border-radius:10px;margin-left:4px"></span>
             </button>
         </div>
 
         <!-- Filter bar -->
-        <div style="padding:10px 20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)">
-            <input id="fc-search" class="form-control" placeholder="Tìm @username hoặc tên..." style="flex:1;max-width:300px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--text-secondary)">
-                <input type="checkbox" id="fc-filter-follows-back"> Follows you
+        <div style="padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--bg-secondary)">
+            <input id="fc-search" class="form-control" placeholder="Tìm @username hoặc tên..." style="width:240px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
+                <input type="checkbox" id="fc-filter-follows-back"> Đã follow lại
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--text-secondary);margin-left:auto">
-                <input type="checkbox" id="fc-select-all"> Chọn tất cả
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
+                <input type="checkbox" id="fc-filter-blue">
+                <span style="display:inline-flex;align-items:center;gap:3px">${svgBlueTick()} Tick xanh</span>
             </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
+                <input type="checkbox" id="fc-filter-gold">
+                <span style="display:inline-flex;align-items:center;gap:3px">${svgGoldTick()} Tick vàng</span>
+            </label>
+            <div id="fc-result-count" style="margin-left:auto;font-size:12px;color:var(--text-muted)"></div>
         </div>
 
-        <!-- User list -->
-        <div id="fc-list" style="min-height:300px;max-height:520px;overflow-y:auto">
-            <div id="fc-empty" style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
-                Chọn profile và nhấn Load để tải danh sách
+        <!-- Table header -->
+        <div id="fc-table-header" style="display:none;padding:8px 20px;background:var(--bg-tertiary);border-bottom:1px solid var(--border)">
+            <div style="display:grid;grid-template-columns:36px 1fr 100px 100px 110px 70px;gap:8px;align-items:center;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px">
+                <label style="cursor:pointer;display:flex;align-items:center;justify-content:center">
+                    <input type="checkbox" id="fc-select-all" style="width:14px;height:14px;accent-color:var(--accent)">
+                </label>
+                <span>Tài khoản</span>
+                <span style="text-align:right">Đang theo dõi</span>
+                <span style="text-align:right">Người theo dõi</span>
+                <span style="text-align:center">Follow lại</span>
+                <span style="text-align:center">Tick</span>
             </div>
         </div>
 
-        <!-- Stats loading bar -->
-        <div id="fc-stats-bar" style="display:none;padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-secondary);background:var(--bg-tertiary)">
-            <span id="fc-stats-text">Đang tải thống kê...</span>
+        <!-- Table body -->
+        <div id="fc-list" style="min-height:300px;max-height:540px;overflow-y:auto">
+            <div id="fc-empty" style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
+                Chọn profile và nhấn <strong>Tải danh sách</strong>
+            </div>
         </div>
     </div>`;
 }
 
 // ─── Init ─────────────────────────────────────────────────
 export async function init() {
-    // Reset state
     state.users = [];
-    state.stats = {};
     state.selected = new Set();
     state.search = '';
     state.filterFollowsBack = false;
+    state.filterBlue = false;
+    state.filterGold = false;
     state.xUsername = null;
 
-    // Load profiles
     try {
         const data = await api.getProfiles();
         state.profiles = (data.profiles || []).filter(p => p.enabled !== false);
@@ -143,7 +157,6 @@ function bindEvents() {
             if (btn.dataset.tab === state.activeTab) return;
             state.activeTab = btn.dataset.tab;
             state.users = [];
-            state.stats = {};
             state.selected.clear();
             document.querySelectorAll('.fc-tab').forEach(b => {
                 b.style.borderBottomColor = 'transparent';
@@ -167,6 +180,24 @@ function bindEvents() {
         renderList();
     });
 
+    document.getElementById('fc-filter-blue').addEventListener('change', e => {
+        state.filterBlue = e.target.checked;
+        if (e.target.checked) {
+            state.filterGold = false;
+            document.getElementById('fc-filter-gold').checked = false;
+        }
+        renderList();
+    });
+
+    document.getElementById('fc-filter-gold').addEventListener('change', e => {
+        state.filterGold = e.target.checked;
+        if (e.target.checked) {
+            state.filterBlue = false;
+            document.getElementById('fc-filter-blue').checked = false;
+        }
+        renderList();
+    });
+
     document.getElementById('fc-select-all').addEventListener('change', e => {
         const visible = getFiltered();
         if (e.target.checked) visible.forEach(u => state.selected.add(u.username));
@@ -185,17 +216,19 @@ async function loadList() {
 
     state.loading = true;
     state.users = [];
-    state.stats = {};
     state.selected.clear();
 
     const loadBtn = document.getElementById('fc-load');
     const loadText = document.getElementById('fc-load-text');
+    const tabLabel = state.activeTab === 'following' ? 'đang theo dõi' : 'người theo dõi';
+
     loadBtn.disabled = true;
     loadText.textContent = 'Đang tải...';
-    document.getElementById('fc-empty').textContent = `Đang scrape ${state.activeTab}...`;
+    document.getElementById('fc-table-header').style.display = 'none';
     document.getElementById('fc-list').innerHTML = `
         <div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
-            Đang scrape ${state.activeTab}... (có thể mất 1-3 phút tuỳ số lượng)
+            ⏳ Đang scrape danh sách ${tabLabel}...<br>
+            <span style="font-size:11px;margin-top:6px;display:block">(có thể mất 1–3 phút tuỳ số lượng)</span>
         </div>`;
     document.getElementById('fc-xuser').textContent = '';
 
@@ -204,68 +237,23 @@ async function loadList() {
         state.users = res.users || [];
         state.xUsername = res.xUsername;
 
-        document.getElementById('fc-xuser').textContent = `@${res.xUsername} — ${state.activeTab}`;
-        document.getElementById(`fc-${state.activeTab}-count`).textContent = ` ${state.users.length}`;
+        const tabLabel2 = state.activeTab === 'following' ? 'Đang theo dõi' : 'Người theo dõi';
+        document.getElementById('fc-xuser').textContent = `@${res.xUsername} — ${tabLabel2}`;
+        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
 
+        document.getElementById('fc-table-header').style.display = 'block';
         renderList();
         updateSelCount();
-
-        // Load stats in background
-        loadStatsBackground();
-
     } catch (err) {
         toast('Lỗi scrape: ' + err.message, 'error');
         document.getElementById('fc-list').innerHTML = `
             <div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">
-                Lỗi: ${err.message}
+                ❌ ${escHtml(err.message)}
             </div>`;
     } finally {
         state.loading = false;
         loadBtn.disabled = false;
-        loadText.textContent = 'Load';
-    }
-}
-
-// ─── Load stats in batches of 8 ──────────────────────────
-async function loadStatsBackground() {
-    if (state.statsLoading) return;
-    state.statsLoading = true;
-
-    const allUsernames = state.users.map(u => u.username);
-    const BATCH = 8;
-    const statsBar = document.getElementById('fc-stats-bar');
-    const statsText = document.getElementById('fc-stats-text');
-    statsBar.style.display = 'block';
-
-    let done = 0;
-    for (let i = 0; i < allUsernames.length; i += BATCH) {
-        const batch = allUsernames.slice(i, i + BATCH);
-        statsText.textContent = `Đang tải thống kê... ${done}/${allUsernames.length}`;
-
-        try {
-            const res = await followApi.stats(state.selectedProfile, batch);
-            Object.assign(state.stats, res.stats || {});
-            done += batch.length;
-            updateStatsInList(batch);
-        } catch {
-            done += batch.length;
-        }
-    }
-
-    statsBar.style.display = 'none';
-    state.statsLoading = false;
-}
-
-// Update only stat cells for loaded usernames
-function updateStatsInList(usernames) {
-    for (const username of usernames) {
-        const el = document.getElementById(`fc-stats-${username}`);
-        if (!el) continue;
-        const s = state.stats[username];
-        if (!s) continue;
-        const fing = s.following !== null ? formatCount(s.following) : '—';
-        const fers = s.followers !== null ? formatCount(s.followers) : '—';
-        el.innerHTML = `<span><strong>${fing}</strong> following</span><span><strong>${fers}</strong> followers</span>`;
+        loadText.textContent = 'Tải danh sách';
     }
 }
 
@@ -274,9 +262,11 @@ function getFiltered() {
     return state.users.filter(u => {
         if (state.search) {
             const q = state.search;
-            if (!u.username.toLowerCase().includes(q) && !u.displayName.toLowerCase().includes(q)) return false;
+            if (!u.username.toLowerCase().includes(q) && !(u.displayName || '').toLowerCase().includes(q)) return false;
         }
         if (state.filterFollowsBack && !u.followsYou) return false;
+        if (state.filterBlue && u.verifiedType !== 'blue') return false;
+        if (state.filterGold && u.verifiedType !== 'gold') return false;
         return true;
     });
 }
@@ -285,68 +275,86 @@ function renderList() {
     const list = document.getElementById('fc-list');
     const filtered = getFiltered();
 
-    if (filtered.length === 0 && state.users.length === 0) {
+    document.getElementById('fc-result-count').textContent =
+        state.users.length > 0
+            ? `Hiển thị ${filtered.length} / ${state.users.length}`
+            : '';
+
+    if (state.users.length === 0) {
         list.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Chưa có dữ liệu</div>`;
         return;
     }
     if (filtered.length === 0) {
-        list.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Không tìm thấy kết quả</div>`;
+        list.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:13px">Không tìm thấy kết quả phù hợp</div>`;
         return;
     }
 
     list.innerHTML = filtered.map(u => userRowHtml(u)).join('');
 
-    // Bind checkboxes
     list.querySelectorAll('.fc-user-check').forEach(cb => {
         cb.addEventListener('change', e => {
             const username = e.target.dataset.username;
             if (e.target.checked) state.selected.add(username);
             else state.selected.delete(username);
+            const row = document.getElementById(`fc-row-${CSS.escape(username)}`);
+            if (row) row.style.background = e.target.checked ? 'rgba(88,166,255,0.07)' : '';
             updateSelCount();
-            // Highlight row
-            const row = document.getElementById(`fc-row-${username}`);
-            if (row) row.style.background = e.target.checked ? 'rgba(88,166,255,0.06)' : '';
         });
     });
 }
 
 function userRowHtml(u) {
     const isSelected = state.selected.has(u.username);
-    const s = state.stats[u.username];
-    const statsHtml = s
-        ? `<span><strong>${s.following !== null ? formatCount(s.following) : '—'}</strong> following</span>
-           <span><strong>${s.followers !== null ? formatCount(s.followers) : '—'}</strong> followers</span>`
-        : `<span style="color:var(--text-muted)">Đang tải...</span>`;
-
-    const verifiedIcon = u.isVerified
-        ? `<svg viewBox="0 0 22 22" width="14" height="14" style="fill:#58a6ff;vertical-align:-2px;margin-left:4px"><path d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"/></svg>`
-        : '';
-
-    const followsYouBadge = u.followsYou
-        ? `<span style="font-size:11px;padding:1px 7px;background:rgba(88,166,255,.12);color:var(--accent);border-radius:10px;margin-left:6px">Follows you</span>`
-        : '';
-
-    const initials = (u.displayName || u.username).substring(0, 2).toUpperCase();
     const avatarColor = strToColor(u.username);
+    const initials = (u.displayName || u.username).substring(0, 2).toUpperCase();
+
+    const avatarHtml = u.avatarUrl
+        ? `<img src="${escHtml(u.avatarUrl)}" alt=""
+               style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0"
+               onerror="this.replaceWith(document.getElementById('fc-init-tmpl').content.cloneNode(true).firstElementChild)">`
+        : initialsAvatar(initials, avatarColor);
+
+    const followingStr = u.following !== null && u.following !== undefined ? formatCount(u.following) : '—';
+    const followersStr = u.followers !== null && u.followers !== undefined ? formatCount(u.followers) : '—';
+
+    const followsYouHtml = u.followsYou
+        ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(88,166,255,.15)">
+               <svg viewBox="0 0 12 12" width="11" height="11" fill="none"><polyline points="1,6 5,10 11,2" stroke="#58a6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+           </span>`
+        : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
+
+    const tickHtml = u.verifiedType === 'blue'
+        ? svgBlueTick()
+        : u.verifiedType === 'gold'
+            ? svgGoldTick()
+            : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
 
     return `
-    <div id="fc-row-${u.username}" style="display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);${isSelected ? 'background:rgba(88,166,255,0.06)' : ''}">
-        <input type="checkbox" class="fc-user-check" data-username="${u.username}" ${isSelected ? 'checked' : ''}
-               style="width:15px;height:15px;cursor:pointer;accent-color:var(--accent);flex-shrink:0">
-        <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;${avatarColor}">${initials}</div>
-        <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap;gap:2px">
-                ${escHtml(u.displayName)}${verifiedIcon}${followsYouBadge}
-            </div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:1px">@${escHtml(u.username)}</div>
-            <div id="fc-stats-${u.username}" style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);margin-top:3px">
-                ${statsHtml}
+    <div id="fc-row-${escAttr(u.username)}"
+         style="display:grid;grid-template-columns:36px 1fr 100px 100px 110px 70px;gap:8px;align-items:center;padding:9px 20px;border-bottom:1px solid var(--border);${isSelected ? 'background:rgba(88,166,255,0.07)' : ''}">
+
+        <div style="display:flex;align-items:center;justify-content:center">
+            <input type="checkbox" class="fc-user-check" data-username="${escAttr(u.username)}"
+                   ${isSelected ? 'checked' : ''}
+                   style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            ${avatarHtml}
+            <div style="min-width:0">
+                <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+                    <a href="https://x.com/${escAttr(u.username)}" target="_blank"
+                       style="color:var(--text-primary);text-decoration:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                       title="${escAttr(u.displayName || u.username)}">${escHtml(u.displayName || u.username)}</a>
+                </div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@${escHtml(u.username)}</div>
             </div>
         </div>
-        <a href="https://x.com/${u.username}" target="_blank"
-           style="padding:5px 14px;border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--text-secondary);text-decoration:none;flex-shrink:0">
-            View
-        </a>
+
+        <div style="text-align:right;font-size:12px;color:var(--text-secondary)">${followingStr}</div>
+        <div style="text-align:right;font-size:12px;color:var(--text-secondary)">${followersStr}</div>
+        <div style="display:flex;align-items:center;justify-content:center">${followsYouHtml}</div>
+        <div style="display:flex;align-items:center;justify-content:center">${tickHtml}</div>
     </div>`;
 }
 
@@ -355,9 +363,8 @@ function updateSelCount() {
     const countEl = document.getElementById('fc-sel-count');
     const btn = document.getElementById('fc-unfollow-btn');
     const numEl = document.getElementById('fc-sel-num');
-
     if (n > 0) {
-        countEl.textContent = `${n} đã chọn`;
+        countEl.textContent = `Đã chọn ${n}`;
         btn.style.display = 'inline-flex';
         numEl.textContent = n;
     } else {
@@ -370,29 +377,27 @@ function updateSelCount() {
 async function doUnfollow() {
     const usernames = Array.from(state.selected);
     if (usernames.length === 0) return;
-    if (!confirm(`Unfollow ${usernames.length} tài khoản?`)) return;
+    if (!confirm(`Bỏ theo dõi ${usernames.length} tài khoản?`)) return;
 
     const btn = document.getElementById('fc-unfollow-btn');
     btn.disabled = true;
-    btn.textContent = 'Đang unfollow...';
+    btn.innerHTML = 'Đang xử lý...';
 
     try {
         const res = await followApi.unfollow(state.selectedProfile, usernames);
-        toast(`Đã unfollow ${res.unfollowed?.length || 0} tài khoản`, 'success');
+        toast(`Đã bỏ theo dõi ${res.unfollowed?.length || 0} tài khoản`, 'success');
         if (res.failed?.length) toast(`Thất bại: ${res.failed.join(', ')}`, 'error');
 
-        // Remove unfollowed from list
         const done = new Set(res.unfollowed || []);
         state.users = state.users.filter(u => !done.has(u.username));
         state.selected.clear();
         renderList();
         updateSelCount();
-        document.getElementById(`fc-${state.activeTab}-count`).textContent = ` ${state.users.length}`;
+        document.getElementById(`fc-${state.activeTab}-count`).textContent = state.users.length;
     } catch (err) {
-        toast('Lỗi unfollow: ' + err.message, 'error');
+        toast('Lỗi: ' + err.message, 'error');
     } finally {
         btn.disabled = false;
-        document.getElementById('fc-sel-num').textContent = state.selected.size;
         updateSelCount();
     }
 }
@@ -401,12 +406,19 @@ async function doUnfollow() {
 function escHtml(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function escAttr(str) {
+    return String(str || '').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 function formatCount(n) {
     if (n === null || n === undefined) return '—';
     if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.0', '') + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1).replace('.0', '') + 'K';
-    return n.toString();
+    return n.toLocaleString();
+}
+
+function initialsAvatar(initials, colorStyle) {
+    return `<div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;${colorStyle}">${initials}</div>`;
 }
 
 const AVATAR_COLORS = [
@@ -419,15 +431,21 @@ const AVATAR_COLORS = [
     'background:#831843;color:#fbcfe8',
     'background:#1e3a5f;color:#93c5fd',
 ];
-
 function strToColor(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
     return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+function svgBlueTick() {
+    return `<svg viewBox="0 0 22 22" width="15" height="15" style="vertical-align:-2px"><path fill="#1d9bf0" d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"/></svg>`;
+}
+
+function svgGoldTick() {
+    return `<svg viewBox="0 0 22 22" width="15" height="15" style="vertical-align:-2px"><path fill="#FFD400" d="M20.396 11c-.018-.646-.215-1.275-.57-1.816-.354-.54-.852-.972-1.438-1.246.223-.607.27-1.264.14-1.897-.131-.634-.437-1.218-.882-1.687-.47-.445-1.053-.75-1.687-.882-.633-.13-1.29-.083-1.897.14-.273-.587-.704-1.086-1.245-1.44S11.647 1.62 11 1.604c-.646.017-1.273.213-1.813.568s-.969.854-1.24 1.44c-.608-.223-1.267-.272-1.902-.14-.635.13-1.22.436-1.69.882-.445.47-.749 1.055-.878 1.688-.13.633-.08 1.29.144 1.896-.587.274-1.087.705-1.443 1.245-.356.54-.555 1.17-.574 1.817.02.647.218 1.276.574 1.817.356.54.856.972 1.443 1.245-.224.606-.274 1.263-.144 1.896.13.634.433 1.218.877 1.688.47.443 1.054.747 1.687.878.633.132 1.29.084 1.897-.136.274.586.705 1.084 1.246 1.439.54.354 1.17.551 1.816.569.647-.016 1.276-.213 1.817-.567s.972-.854 1.245-1.44c.604.239 1.266.296 1.903.164.636-.132 1.22-.447 1.68-.907.46-.46.776-1.044.908-1.681s.075-1.299-.165-1.903c.586-.274 1.084-.705 1.439-1.246.354-.54.551-1.17.569-1.816zM9.662 14.85l-3.429-3.428 1.293-1.302 2.072 2.072 4.4-4.794 1.347 1.246z"/></svg>`;
+}
+
 export function destroy() {
     state.users = [];
     state.selected = new Set();
-    state.stats = {};
 }
