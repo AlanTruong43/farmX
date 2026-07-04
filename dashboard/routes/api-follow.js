@@ -157,11 +157,23 @@ router.get('/stream', async (req, res) => {
                     const img = cell.querySelector('img[src*="profile_images"]') || cell.querySelector('img[src*="pbs.twimg"]');
                     const avatarUrl = img ? img.src.replace('_normal', '_bigger') : null;
 
-                    // verified type
+                    // verified type — gold tick màu #FFD400, blue tick màu #1D9BF0
                     let verifiedType = null;
                     const verifiedEl = cell.querySelector('[data-testid="icon-verified"]');
                     if (verifiedEl) {
-                        verifiedType = /FFD400|ffd400/i.test(verifiedEl.innerHTML) ? 'gold' : 'blue';
+                        // Kiểm tra qua innerHTML (hex hoặc rgb)
+                        const svgHtml = verifiedEl.innerHTML || '';
+                        const styleAttr = verifiedEl.getAttribute('style') || '';
+                        const goldPatterns = /ffd400|rgb\(\s*255\s*,\s*212|#[Ff][Ff][Dd]/;
+                        const isGold = goldPatterns.test(svgHtml) || goldPatterns.test(styleAttr)
+                            // Kiểm tra computed fill của path trong SVG
+                            || (() => {
+                                const path = verifiedEl.querySelector('path,svg');
+                                if (!path) return false;
+                                const fill = path.getAttribute('fill') || '';
+                                return goldPatterns.test(fill);
+                            })();
+                        verifiedType = isGold ? 'gold' : 'blue';
                     }
 
                     // vị trí để hover (giữa phần tên)
