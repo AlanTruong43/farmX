@@ -138,9 +138,10 @@ router.get('/stream', async (req, res) => {
         while (noNewCount < 4) {
             if (clientClosed || res.writableEnded) break;
 
-            // Lấy tất cả UserCell hiện tại + toạ độ viewport của chúng
+            // Lấy tất cả UserCell trong primaryColumn (tránh sidebar)
             const cells = await page.evaluate(() => {
-                return [...document.querySelectorAll('[data-testid="UserCell"]')].map(cell => {
+                const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
+                return [...primary.querySelectorAll('[data-testid="UserCell"]')].map(cell => {
                     // username
                     let username = null;
                     for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
@@ -157,23 +158,17 @@ router.get('/stream', async (req, res) => {
                     const img = cell.querySelector('img[src*="profile_images"]') || cell.querySelector('img[src*="pbs.twimg"]');
                     const avatarUrl = img ? img.src.replace('_normal', '_bigger') : null;
 
-                    // verified type — dùng getComputedStyle để lấy màu thực tế render
+                    // verified type:
+                    // - Gold tick dùng <linearGradient> bên trong SVG (không có fill màu đơn)
+                    // - Blue tick dùng SVG với path fill đơn màu xanh
                     let verifiedType = null;
-                    let _verifiedDebug = null;
                     const verifiedEl = cell.querySelector('[data-testid="icon-verified"]');
                     if (verifiedEl) {
-                        const svgEl = verifiedEl.querySelector('svg') || verifiedEl;
-                        const pathEl = verifiedEl.querySelector('path');
-                        const computedColor = window.getComputedStyle(svgEl).color || '';
-                        const computedFill = pathEl ? window.getComputedStyle(pathEl).fill || '' : '';
-                        const pathFill = (pathEl?.getAttribute('fill') || '').toLowerCase();
-                        const svgHtml = verifiedEl.innerHTML.toLowerCase();
-                        _verifiedDebug = { computedColor, computedFill, pathFill, svgHtml: svgHtml.substring(0, 200) };
-                        // Gold = rgb(255, 212, 0) / #FFD400
-                        const isGold = /rgb\(\s*255\s*,\s*212\s*,\s*0\s*\)|ffd400/i.test(computedColor)
-                            || /rgb\(\s*255\s*,\s*212\s*,\s*0\s*\)|ffd400/i.test(computedFill)
-                            || pathFill === '#ffd400'
-                            || /ffd400/i.test(svgHtml);
+                        const svgHtml = verifiedEl.innerHTML;
+                        // Gold: có linearGradient hoặc stop-color vàng
+                        const isGold = svgHtml.includes('linearGradient')
+                            || /stop-color.*#f4e|stop-color.*#cd8|stop-color.*#cb7/i.test(svgHtml)
+                            || /ffd400|f4e72a|cd8105|cb7b00/i.test(svgHtml);
                         verifiedType = isGold ? 'gold' : 'blue';
                     }
 
@@ -187,7 +182,6 @@ router.get('/stream', async (req, res) => {
                         displayName,
                         avatarUrl,
                         verifiedType,
-                        _verifiedDebug,
                         hoverX: rect.left + rect.width / 2,
                         hoverY: rect.top + rect.height / 2,
                         inViewport: rect.top >= 0 && rect.bottom <= vh,
@@ -202,11 +196,6 @@ router.get('/stream', async (req, res) => {
 
                 seen.add(cell.username.toLowerCase());
                 added++;
-
-                // Log debug info cho tick detection
-                if (cell.verifiedType && cell._verifiedDebug) {
-                    log.debug(`[tick-debug] @${cell.username} → ${cell.verifiedType} | color="${cell._verifiedDebug.computedColor}" fill="${cell._verifiedDebug.computedFill}" pathFill="${cell._verifiedDebug.pathFill}"`);
-                }
 
                 // Emit user ngay — frontend hiện row
                 send('user', {
