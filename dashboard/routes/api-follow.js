@@ -300,22 +300,27 @@ router.post('/unfollow', async (req, res) => {
             }, [...toUnfollow]);
 
             if (target) {
-                // Chờ confirm dialog
+                // Đợi 2s sau khi click nút Following
+                await sleep(2000);
                 const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 3000 }).catch(() => null);
                 if (confirmBtn) {
                     await confirmBtn.click();
-                    await sleep(700);
+                    // Đợi 2s sau khi xác nhận
+                    await sleep(2000);
                     toUnfollow.delete(target.toLowerCase());
                     unfollowed.push(target);
-                    log.debug(`follow/unfollow: ✓ @${target} (còn ${toUnfollow.size})`);
+                    log.debug(`follow/unfollow: ✓ @${target} (${unfollowed.length} xong, còn ${toUnfollow.size})`);
+                    // Mỗi 10 người thì nghỉ 10s
+                    if (unfollowed.length % 10 === 0) {
+                        log.info(`follow/unfollow: nghỉ 10s sau ${unfollowed.length} người...`);
+                        await sleep(10000);
+                    }
                 } else {
-                    // Không có confirm — bỏ qua user này
                     toUnfollow.delete(target.toLowerCase());
                     failed.push(target);
                     log.warn(`follow/unfollow: không thấy confirm dialog cho @${target}`);
                 }
                 noNewCount = 0;
-                await sleep(400);
             } else {
                 // Không tìm thấy ai trong viewport — scroll xuống
                 noNewCount++;
