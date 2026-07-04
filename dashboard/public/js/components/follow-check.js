@@ -31,6 +31,7 @@ let state = {
     selected: new Set(),
     search: '',
     filterFollowsBack: false,
+    filterNotFollowBack: false,
     filterBlue: false,
     filterGold: false,
     loading: false,
@@ -97,6 +98,9 @@ export function render() {
             <input id="fc-search" class="form-control" placeholder="Tìm @username hoặc tên..." style="width:240px">
             <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
                 <input type="checkbox" id="fc-filter-follows-back"> Đã follow lại
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
+                <input type="checkbox" id="fc-filter-not-follow-back"> Chưa follow lại
             </label>
             <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;color:var(--text-secondary);white-space:nowrap">
                 <input type="checkbox" id="fc-filter-blue">
@@ -247,6 +251,13 @@ function bindEvents() {
 
     document.getElementById('fc-filter-follows-back').addEventListener('change', e => {
         state.filterFollowsBack = e.target.checked;
+        if (e.target.checked) { state.filterNotFollowBack = false; document.getElementById('fc-filter-not-follow-back').checked = false; }
+        renderList();
+    });
+
+    document.getElementById('fc-filter-not-follow-back').addEventListener('change', e => {
+        state.filterNotFollowBack = e.target.checked;
+        if (e.target.checked) { state.filterFollowsBack = false; document.getElementById('fc-filter-follows-back').checked = false; }
         renderList();
     });
 
@@ -337,11 +348,13 @@ function loadList() {
         const u = state.users.find(x => x.username === d.username);
         if (u) { u.following = d.following; u.followers = d.followers; u.followsYou = d.followsYou; }
         updateStatsRow(d.username, d.following, d.followers, d.followsYou);
-        if (state.filterFollowsBack && !d.followsYou) {
-            const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
-            if (row) row.style.display = 'none';
-            updateResultCount();
+        // Ẩn/hiện row dựa theo filter follow
+        const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
+        if (row && u) {
+            const show = userPassesFollowFilter(u);
+            row.style.display = show ? '' : 'none';
         }
+        updateResultCount();
     });
 
     es.addEventListener('done', e => {
@@ -414,6 +427,16 @@ function userPassesFilter(u) {
     return true;
 }
 
+function userPassesFollowFilter(u) {
+    if (state.filterFollowsBack && !u.followsYou) return false;
+    // "Chưa follow lại": stats đã load (followsYou không phải null) và = false
+    if (state.filterNotFollowBack) {
+        if (u.followsYou === null) return false; // chưa load stats — ẩn tạm
+        if (u.followsYou === true) return false;
+    }
+    return true;
+}
+
 function renderList() {
     const list = document.getElementById('fc-list');
     if (!list) return;
@@ -424,7 +447,7 @@ function renderList() {
     list.innerHTML = '';
     for (const u of state.users) {
         if (!userPassesFilter(u)) continue;
-        if (state.filterFollowsBack && !u.followsYou) continue;
+        if (!userPassesFollowFilter(u)) continue;
         const div = document.createElement('div');
         div.innerHTML = userRowHtml(u);
         const row = div.firstElementChild;

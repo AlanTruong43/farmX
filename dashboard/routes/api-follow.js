@@ -157,22 +157,23 @@ router.get('/stream', async (req, res) => {
                     const img = cell.querySelector('img[src*="profile_images"]') || cell.querySelector('img[src*="pbs.twimg"]');
                     const avatarUrl = img ? img.src.replace('_normal', '_bigger') : null;
 
-                    // verified type — gold tick màu #FFD400, blue tick màu #1D9BF0
+                    // verified type — dùng getComputedStyle để lấy màu thực tế render
                     let verifiedType = null;
+                    let _verifiedDebug = null;
                     const verifiedEl = cell.querySelector('[data-testid="icon-verified"]');
                     if (verifiedEl) {
-                        // Kiểm tra qua innerHTML (hex hoặc rgb)
-                        const svgHtml = verifiedEl.innerHTML || '';
-                        const styleAttr = verifiedEl.getAttribute('style') || '';
-                        const goldPatterns = /ffd400|rgb\(\s*255\s*,\s*212|#[Ff][Ff][Dd]/;
-                        const isGold = goldPatterns.test(svgHtml) || goldPatterns.test(styleAttr)
-                            // Kiểm tra computed fill của path trong SVG
-                            || (() => {
-                                const path = verifiedEl.querySelector('path,svg');
-                                if (!path) return false;
-                                const fill = path.getAttribute('fill') || '';
-                                return goldPatterns.test(fill);
-                            })();
+                        const svgEl = verifiedEl.querySelector('svg') || verifiedEl;
+                        const pathEl = verifiedEl.querySelector('path');
+                        const computedColor = window.getComputedStyle(svgEl).color || '';
+                        const computedFill = pathEl ? window.getComputedStyle(pathEl).fill || '' : '';
+                        const pathFill = (pathEl?.getAttribute('fill') || '').toLowerCase();
+                        const svgHtml = verifiedEl.innerHTML.toLowerCase();
+                        _verifiedDebug = { computedColor, computedFill, pathFill, svgHtml: svgHtml.substring(0, 200) };
+                        // Gold = rgb(255, 212, 0) / #FFD400
+                        const isGold = /rgb\(\s*255\s*,\s*212\s*,\s*0\s*\)|ffd400/i.test(computedColor)
+                            || /rgb\(\s*255\s*,\s*212\s*,\s*0\s*\)|ffd400/i.test(computedFill)
+                            || pathFill === '#ffd400'
+                            || /ffd400/i.test(svgHtml);
                         verifiedType = isGold ? 'gold' : 'blue';
                     }
 
@@ -186,6 +187,7 @@ router.get('/stream', async (req, res) => {
                         displayName,
                         avatarUrl,
                         verifiedType,
+                        _verifiedDebug,
                         hoverX: rect.left + rect.width / 2,
                         hoverY: rect.top + rect.height / 2,
                         inViewport: rect.top >= 0 && rect.bottom <= vh,
@@ -200,6 +202,11 @@ router.get('/stream', async (req, res) => {
 
                 seen.add(cell.username.toLowerCase());
                 added++;
+
+                // Log debug info cho tick detection
+                if (cell.verifiedType && cell._verifiedDebug) {
+                    log.debug(`[tick-debug] @${cell.username} → ${cell.verifiedType} | color="${cell._verifiedDebug.computedColor}" fill="${cell._verifiedDebug.computedFill}" pathFill="${cell._verifiedDebug.pathFill}"`);
+                }
 
                 // Emit user ngay — frontend hiện row
                 send('user', {
