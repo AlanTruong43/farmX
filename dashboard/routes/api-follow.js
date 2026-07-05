@@ -292,74 +292,119 @@ router.post('/unfollow', async (req, res) => {
         await page.goto(`https://x.com/${xUsername}/${type}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await sleep(2500);
 
-        const toUnfollow = new Set(usernames.map(u => u.toLowerCase()));
+        // Map lowercase → username gốc để giữ đúng case khi trả về
+        const usernameMap = new Map(usernames.map(u => [u.toLowerCase(), u]));
+        const toUnfollow = new Set(usernameMap.keys());
         const unfollowed = [], failed = [];
         const total = usernames.length;
-        let noNewCount = 0;
+        const seenCells = new Set(); // tất cả username đã thấy — để phát hiện cuối trang
+        let noNewCells = 0;         // consecutive scrolls không có cell mới = cuối trang
         let doneCount = 0;
 
-        while (toUnfollow.size > 0 && noNewCount < 6) {
+        // Scroll qua toàn bộ danh sách như scan loop — dừng khi không có cell mới
+        while (toUnfollow.size > 0 && noNewCells < 5) {
             if (isStopped()) { send('stopped', {}); break; }
 
-            // Tìm user đầu tiên trong viewport có nút -unfollow và click
-            const target = await page.evaluate((targets) => {
+            // Lấy tất cả UserCell hiện tại trong primaryColumn
+            const cells = await page.evaluate(() => {
                 const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
                 const vh = window.innerHeight;
-                for (const cell of primary.querySelectorAll('[data-testid="UserCell"]')) {
+                return [...primary.querySelectorAll('[data-testid="UserCell"]')].map(cell => {
                     let username = null;
                     for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
                         const parts = (link.getAttribute('href') || '').split('/').filter(Boolean);
                         if (parts.length === 1 && !link.href.includes('/i/')) { username = parts[0]; break; }
                     }
-                    if (!username || !targets.includes(username.toLowerCase())) continue;
+                    if (!username) return null;
                     const btn = cell.querySelector('[data-testid$="-unfollow"]');
-                    if (!btn) continue;
-                    const rect = btn.getBoundingClientRect();
-                    if (rect.top < 0 || rect.bottom > vh) continue;
-                    btn.click();
-                    return username;
-                }
-                return null;
-            }, [...toUnfollow]);
+                    const rect = btn ? btn.getBoundingClientRect() : cell.getBoundingClientRect();
+                    return {
+                        username,
+                        hasBtn: !!btn,
+                        inViewport: rect.top >= 0 && rect.bottom <= vh,
+                    };
+                }).filter(Boolean);
+            }).catch(() => []);
 
-            if (target) {
-                await sleep(2000); // chờ dialog xuất hiện
+            // Đếm cell mới để phát hiện cuối trang
+            let newCellCount = 0;
+            for (const c of cells) {
+                if (!seenCells.has(c.username.toLowerCase())) {
+                    seenCells.add(c.username.toLowerCase());
+                    newCellCount++;
+                }
+            }
+
+            // Tìm target đầu tiên trong viewport và unfollow
+            let clicked = false;
+            for (const cell of cells) {
+                if (!cell.inViewport || !cell.hasBtn) continue;
+                if (!toUnfollow.has(cell.username.toLowerCase())) continue;
+
+                const clickedUsername = cell.username;
+                await page.evaluate((uname) => {
+                    const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
+                    for (const cell of primary.querySelectorAll('[data-testid="UserCell"]')) {
+                        let u = null;
+                        for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
+                            const parts = (link.getAttribute('href') || '').split('/').filter(Boolean);
+                            if (parts.length === 1 && !link.href.includes('/i/')) { u = parts[0]; break; }
+                        }
+                        if (u?.toLowerCase() === uname) {
+                            const btn = cell.querySelector('[data-testid$="-unfollow"]');
+                            if (btn) btn.click();
+                            break;
+                        }
+                    }
+                }, clickedUsername.toLowerCase());
+
+                await sleep(2000); // chờ dialog
                 if (isStopped()) { send('stopped', {}); break; }
 
                 const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 4000 }).catch(() => null);
                 if (confirmBtn) {
                     await confirmBtn.click();
-                    await sleep(2000); // chờ X xử lý xong
-                    toUnfollow.delete(target.toLowerCase());
-                    unfollowed.push(target);
+                    await sleep(2000);
+                    const key = clickedUsername.toLowerCase();
+                    toUnfollow.delete(key);
+                    const orig = usernameMap.get(key) || clickedUsername;
+                    unfollowed.push(orig);
                     doneCount++;
-                    log.debug(`follow/unfollow: ✓ @${target} (${doneCount}/${total})`);
-                    send('progress', { username: target, done: doneCount, total, remaining: toUnfollow.size });
+                    log.debug(`follow/unfollow: ✓ @${orig} (${doneCount}/${total}, còn ${toUnfollow.size})`);
+                    send('progress', { username: orig, done: doneCount, total, remaining: toUnfollow.size });
 
-                    // Nghỉ sau mỗi batch
                     if (doneCount % batchSize === 0 && toUnfollow.size > 0) {
                         log.info(`follow/unfollow: nghỉ ${batchDelaySec}s sau ${doneCount} lần`);
                         send('waiting', { seconds: batchDelaySec, after: doneCount });
-                        // Ngủ từng giây để detect stop sớm hơn
                         for (let i = 0; i < batchDelaySec; i++) {
                             if (isStopped()) break;
                             await sleep(1000);
                         }
                     }
                 } else {
-                    toUnfollow.delete(target.toLowerCase());
-                    failed.push(target);
-                    log.warn(`follow/unfollow: không thấy confirm cho @${target}`);
+                    const key = clickedUsername.toLowerCase();
+                    toUnfollow.delete(key);
+                    failed.push(usernameMap.get(key) || clickedUsername);
+                    log.warn(`follow/unfollow: không thấy confirm cho @${clickedUsername}`);
                 }
-                noNewCount = 0;
+                clicked = true;
+                break; // xử lý từng người một
+            }
+
+            if (newCellCount === 0 && !clicked) {
+                noNewCells++;
             } else {
-                noNewCount++;
-                await page.evaluate(() => window.scrollBy(0, 600));
-                await sleep(1200);
+                noNewCells = 0;
+            }
+
+            if (!clicked) {
+                // Scroll xuống để tải thêm
+                await page.evaluate(() => window.scrollBy(0, 900));
+                await sleep(1500);
             }
         }
 
-        for (const u of toUnfollow) failed.push(u);
+        for (const key of toUnfollow) failed.push(usernameMap.get(key) || key);
 
         log.info(`follow/unfollow: xong — ${unfollowed.length} thành công, ${failed.length} không tìm thấy`);
         send('done', { unfollowed, failed, ok: true });
