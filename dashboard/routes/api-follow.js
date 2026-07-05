@@ -264,11 +264,13 @@ router.post('/unfollow', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.flushHeaders();
 
-    let clientClosed = false;
-    req.on('close', () => { clientClosed = true; });
+    // Dùng res.destroyed thay vì req.on('close') —
+    // req close có thể fire ngay sau khi body được đọc (Express body-parser),
+    // còn res.destroyed chỉ true khi client thực sự ngắt kết nối.
+    const isStopped = () => res.destroyed || res.writableEnded;
 
     const send = (event, data) => {
-        if (clientClosed) return;
+        if (isStopped()) return;
         try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
     };
 
@@ -293,7 +295,7 @@ router.post('/unfollow', async (req, res) => {
         let doneCount = 0;
 
         while (toUnfollow.size > 0 && noNewCount < 6) {
-            if (clientClosed) { send('stopped', {}); break; }
+            if (isStopped()) { send('stopped', {}); break; }
 
             // Tìm user đầu tiên trong viewport có nút -unfollow và click
             const target = await page.evaluate((targets) => {
@@ -318,7 +320,7 @@ router.post('/unfollow', async (req, res) => {
 
             if (target) {
                 await sleep(2000); // chờ dialog xuất hiện
-                if (clientClosed) { send('stopped', {}); break; }
+                if (isStopped()) { send('stopped', {}); break; }
 
                 const confirmBtn = await page.waitForSelector('[data-testid="confirmationSheetConfirm"]', { timeout: 4000 }).catch(() => null);
                 if (confirmBtn) {
@@ -334,9 +336,9 @@ router.post('/unfollow', async (req, res) => {
                     if (doneCount % batchSize === 0 && toUnfollow.size > 0) {
                         log.info(`follow/unfollow: nghỉ ${batchDelaySec}s sau ${doneCount} lần`);
                         send('waiting', { seconds: batchDelaySec, after: doneCount });
-                        // Ngủ từng giây để có thể detect clientClosed sớm hơn
+                        // Ngủ từng giây để detect stop sớm hơn
                         for (let i = 0; i < batchDelaySec; i++) {
-                            if (clientClosed) break;
+                            if (isStopped()) break;
                             await sleep(1000);
                         }
                     }

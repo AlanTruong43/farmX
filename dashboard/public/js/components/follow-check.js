@@ -22,6 +22,7 @@ const followApi = {
 
 let _activeStream = null;
 let _unfollowController = null;
+let _eventsBound = false;
 
 // ─── State (giữ khi chuyển tab dashboard) ────────────────
 let state = {
