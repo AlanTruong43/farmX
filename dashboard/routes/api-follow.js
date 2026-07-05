@@ -217,13 +217,17 @@ router.get('/stream', async (req, res) => {
                         const stats = await getHoverCardStats(page);
                         if (stats) {
                             log.debug(`follow/stream: stats @${cell.username} — following=${stats.following} followers=${stats.followers} followsYou=${stats.followsYou}`);
-                            send('stats', { username: cell.username, ...stats });
-                        } else send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
+                            send('stats', { username: cell.username, ...stats, error: false });
+                        } else {
+                            log.warn(`follow/stream: không lấy được stats @${cell.username}`);
+                            send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
+                        }
                         // Dismiss hover card
                         await page.mouse.move(10, 400);
                         await sleep(300);
                     } else {
-                        send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
+                        log.warn(`follow/stream: không thấy hover card @${cell.username}`);
+                        send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                     }
                 } catch {
                     send('stats', { username: cell.username, following: null, followers: null, followsYou: false });

@@ -425,8 +425,13 @@ function loadList() {
     es.addEventListener('stats', e => {
         const d = JSON.parse(e.data);
         const u = state.users.find(x => x.username === d.username);
-        if (u) { u.following = d.following; u.followers = d.followers; u.followsYou = d.followsYou; }
-        updateStatsRow(d.username, d.following, d.followers, d.followsYou);
+        if (u) {
+            u.following = d.following;
+            u.followers = d.followers;
+            u.followsYou = d.followsYou;
+            u.statsError = d.error === true;
+        }
+        updateStatsRow(d.username, d.following, d.followers, d.followsYou, d.error);
         // Ẩn/hiện row dựa theo filter follow
         const row = document.getElementById(`fc-row-${CSS.escape(d.username)}`);
         if (row && u) {
@@ -434,8 +439,12 @@ function loadList() {
             row.style.display = show ? '' : 'none';
         }
         updateResultCount();
-        const fy = d.followsYou === true ? 'có follow lại' : d.followsYou === false ? 'không follow lại' : '?';
-        addLog(`    → following=${formatCount(d.following)} followers=${formatCount(d.followers)} — ${fy}`);
+        if (d.error) {
+            addLog(`    → ERROR: không lấy được stats`, 'warn');
+        } else {
+            const fy = d.followsYou === true ? 'có follow lại' : 'không follow lại';
+            addLog(`    → following=${formatCount(d.following)} followers=${formatCount(d.followers)} — ${fy}`);
+        }
     });
 
     es.addEventListener('done', e => {
@@ -490,10 +499,16 @@ function onCheckboxChange(e) {
     updateSelCount();
 }
 
-function updateStatsRow(username, following, followers, followsYou) {
+function updateStatsRow(username, following, followers, followsYou, isError) {
     const fEl  = document.getElementById(`fc-col-following-${CSS.escape(username)}`);
     const rEl  = document.getElementById(`fc-col-followers-${CSS.escape(username)}`);
     const fyEl = document.getElementById(`fc-col-followsyou-${CSS.escape(username)}`);
+    if (isError) {
+        if (fEl)  fEl.innerHTML = `<span style="color:#f87171;font-size:10px;font-weight:600">ERR</span>`;
+        if (rEl)  rEl.innerHTML = `<span style="color:#f87171;font-size:10px;font-weight:600">ERR</span>`;
+        if (fyEl) fyEl.innerHTML = `<span style="color:#f87171;font-size:10px;font-weight:600;letter-spacing:.5px" title="Không lấy được stats">ERROR</span>`;
+        return;
+    }
     if (fEl)  fEl.textContent  = following  !== null ? formatCount(following)  : '—';
     if (rEl)  rEl.textContent  = followers  !== null ? formatCount(followers)  : '—';
     if (fyEl) fyEl.innerHTML   = followsYou
@@ -513,9 +528,10 @@ function userPassesFilter(u) {
 
 function userPassesFollowFilter(u) {
     if (state.filterFollowsBack && !u.followsYou) return false;
-    // "Chưa follow lại": stats đã load (followsYou không phải null) và = false
+    // "Chưa follow lại": chỉ lấy user đã check được và thực sự không follow lại
     if (state.filterNotFollowBack) {
-        if (u.followsYou === null) return false; // chưa load stats — ẩn tạm
+        if (u.followsYou === null) return false; // chưa load stats hoặc lỗi
+        if (u.statsError) return false;          // không check được — loại khỏi filter
         if (u.followsYou === true) return false;
     }
     return true;
@@ -576,11 +592,13 @@ function userRowHtml(u) {
     const followingStr = u.following !== null && u.following !== undefined ? formatCount(u.following) : '—';
     const followersStr = u.followers !== null && u.followers !== undefined ? formatCount(u.followers) : '—';
 
-    const followsYouHtml = u.followsYou === null
-        ? `<span style="color:var(--text-muted);font-size:11px">...</span>`
-        : u.followsYou
-            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(88,166,255,.15)"><svg viewBox="0 0 12 12" width="11" height="11" fill="none"><polyline points="1,6 5,10 11,2" stroke="#58a6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
-            : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
+    const followsYouHtml = u.statsError
+        ? `<span style="color:#f87171;font-size:10px;font-weight:600;letter-spacing:.5px" title="Không lấy được stats">ERROR</span>`
+        : u.followsYou === null
+            ? `<span style="color:var(--text-muted);font-size:11px">...</span>`
+            : u.followsYou
+                ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(88,166,255,.15)"><svg viewBox="0 0 12 12" width="11" height="11" fill="none"><polyline points="1,6 5,10 11,2" stroke="#58a6ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+                : `<span style="color:var(--text-muted);font-size:11px">—</span>`;
 
     const tickHtml = u.verifiedType === 'blue' ? svgBlueTick()
         : u.verifiedType === 'gold' ? svgGoldTick()
