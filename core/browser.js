@@ -5,6 +5,7 @@
  */
 const puppeteer = require('puppeteer-core');
 const { exec } = require('child_process');
+const log = require('../utils/logger');
 
 // ─── Screen resolution cache ─────────────────────────
 let _screenSize = null;
@@ -255,8 +256,14 @@ class BrowserManager {
                 windowId,
                 bounds: { left: x, top: y, width: w, height: h, windowState: 'normal' },
             });
+            // Đọc lại bounds thực tế sau khi set để verify
+            const actual = await cdp.send('Browser.getWindowBounds', { windowId });
+            const b = actual.bounds;
+            log.info(`Follow Check window: yêu cầu ${w}x${h} tại (${x},${y}) — thực tế: ${b.width}x${b.height} tại (${b.left},${b.top})`);
             await cdp.detach();
-        } catch {}
+        } catch (err) {
+            log.warn(`Follow Check window: không set được bounds — ${err.message}`);
+        }
 
         return { browser, page };
     }
