@@ -25,6 +25,10 @@ class Farmer {
         this.minActionDelay = this.farming.min_delay_between_actions_ms ?? 3000;
         this.maxActionDelay = this.farming.max_delay_between_actions_ms ?? 8000;
         this.languageFilter = this.farming.language_filter || '';
+        const actions = this.farming.actions || {};
+        this.doLike    = actions.like    !== false;
+        this.doComment = actions.comment !== false;
+        this.doFollow  = actions.follow  !== false;
 
         // Loop tracking
         this._currentLoop = 1;
@@ -236,7 +240,7 @@ class Farmer {
 
                     // Pre-fetch AI comment song song với các actions khác
                     let commentPromise = null;
-                    if (doActions && !this._apiDisabled) {
+                    if (doActions && this.doComment && !this._apiDisabled) {
                         log.debug('Pre-fetch AI comment...', this.profileTag);
                         commentPromise = this.ai.generateComment(tweetData, this.profileTag)
                             .catch(err => {
@@ -246,7 +250,7 @@ class Farmer {
                     }
 
                     // Like
-                    if (doActions) {
+                    if (doActions && this.doLike) {
                         const liked = await this._likeTweet(tweet);
                         if (liked) {
                             likedCount++;
@@ -256,7 +260,7 @@ class Farmer {
                     }
 
                     // Follow
-                    if (doActions) {
+                    if (doActions && this.doFollow) {
                         const followed = await this._followUser(tweet);
                         if (followed) {
                             followedCount++;
