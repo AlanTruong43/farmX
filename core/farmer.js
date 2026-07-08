@@ -86,10 +86,10 @@ class Farmer {
         ).catch(() => null);
 
         if (!searchInput) {
-            // Fallback: navigate trực tiếp
+            // Fallback: navigate trực tiếp — không có f=live để mặc định là Top
             log.debug('Không tìm thấy ô search, navigate trực tiếp...', this.profileTag);
             const encoded = encodeURIComponent(hashtag);
-            await this.page.goto(`https://x.com/search?q=${encoded}&src=typed_query&f=live`, {
+            await this.page.goto(`https://x.com/search?q=${encoded}&src=typed_query`, {
                 waitUntil: 'networkidle2', timeout: 30000
             });
         } else {
@@ -99,17 +99,7 @@ class Farmer {
             await sleep(800);
             await this.page.keyboard.press('Enter');
             await randomDelay(3000, 5000);
-
-            // Click tab "Latest" để xem bài mới nhất
-            try {
-                const latestTab = await this.page.waitForSelector('a[href*="f=live"]', { timeout: 5000 });
-                if (latestTab) {
-                    await latestTab.click();
-                    await randomDelay(2000, 3000);
-                }
-            } catch {
-                // Tab có thể đã active sẵn
-            }
+            // Giữ nguyên tab Top (mặc định) — không click Latest
         }
 
         // Lưu URL hiện tại để _gotoHome có thể quay về đúng trang search
@@ -193,10 +183,12 @@ class Farmer {
                     const tweetData = await this._extractTweetData(tweet);
                     if (!tweetData) continue;
 
-                    // Language filter — dùng AI detect (nhanh, chỉ dùng heuristic + 1 API call nhẹ)
+                    // Detect ngôn ngữ — dùng cho cả filter lẫn comment matching
+                    const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag);
+                    tweetData.detectedLang = detectedLang; // truyền vào generateComment
+
                     const lang = this.languageFilter;
                     if (lang && lang !== '') {
-                        const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag);
                         let shouldSkip = false;
                         if (lang === 'vi' && detectedLang !== 'vi') shouldSkip = true;
                         if (lang === 'en' && detectedLang !== 'en') shouldSkip = true;

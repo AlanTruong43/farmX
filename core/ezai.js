@@ -17,8 +17,19 @@ class DEMOClient extends AIProvider {
     async generateComment(tweetData, profileTag = '') {
         const tweetDescription = this._buildTweetDescription(tweetData);
 
+        // Thêm yêu cầu ngôn ngữ dựa theo bài viết
+        let langInstruction = '';
+        const dl = tweetData.detectedLang;
+        if (dl === 'vi') {
+            langInstruction = '\n[YÊU CẦU: Bình luận bằng TIẾNG VIỆT]';
+        } else if (dl === 'en') {
+            langInstruction = '\n[REQUIREMENT: Comment in ENGLISH]';
+        } else if (dl) {
+            langInstruction = `\n[REQUIREMENT: Comment in the same language as the tweet]`;
+        }
+
         // Thêm hướng dẫn tránh trùng vào prompt nếu có lịch sử
-        let userContent = tweetDescription;
+        let userContent = tweetDescription + langInstruction;
         if (this._recentComments.length > 0) {
             const recent = this._recentComments.slice(-10).map(c => `- ${c}`).join('\n');
             userContent += `\n\n[Các comment gần đây (KHÔNG được lặp lại hoặc tương tự):\n${recent}]`;
