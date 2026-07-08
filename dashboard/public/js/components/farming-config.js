@@ -30,8 +30,8 @@ export function render() {
                 </div>
 
                 <div class="form-group">
-                    <label>Hashtags (phân cách bởi dấu phẩy)</label>
-                    <input type="text" class="form-control" id="f-hashtags" placeholder="#AI, #crypto, #tech">
+                    <label>Từ khóa tìm kiếm (phân cách bởi dấu phẩy)</label>
+                    <input type="text" class="form-control" id="f-hashtags" placeholder="#AI, $CASHAPP, crypto">
                 </div>
 
                 <div class="form-row">
