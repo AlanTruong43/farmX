@@ -33,6 +33,9 @@ class Farmer {
         // Track tweets đã xử lý (tránh xử lý lại sau scroll)
         this._processedTweetIds = new Set();
 
+        // URL hợp lệ cho chế độ hiện tại ('home' hoặc 'search')
+        this._validUrlPattern = 'x.com/home';
+
         // API error tracking — dừng profile sau 5 loop lỗi liên tiếp
         this._apiErrorLoops = 0;
         this._apiDisabled = false;
@@ -109,12 +112,23 @@ class Farmer {
             }
         }
 
+        // Lưu URL hiện tại để _gotoHome có thể quay về đúng trang search
+        this._searchUrl = this.page.url();
+
         // Scroll warm-up
         log.info(`Warm-up: scroll kết quả ${this.scrollDuration}s...`, this.profileTag);
         await this._scrollFeed(this.scrollDuration);
 
-        // Farm tweets
-        return await this._processTweetsOnPage();
+        // Cho phép _ensureOnValidPage biết đang ở chế độ search
+        this._validUrlPattern = 'x.com/search';
+
+        // Farm tweets — không navigate về home giữa chừng
+        const result = await this._processTweetsOnPage();
+
+        // Reset lại sau khi xong
+        this._validUrlPattern = 'x.com/home';
+        this._searchUrl = null;
+        return result;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -578,26 +592,28 @@ class Farmer {
         return false;
     }
 
-    // ─── Navigate về x.com/home, tự động accept "Leave site?" dialog ─
+    // ─── Navigate về trang feed hợp lệ, tự động accept "Leave site?" ─
     async _gotoHome() {
         try {
             this.page.once('dialog', async dialog => {
                 await dialog.accept().catch(() => {});
             });
-            await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            // Nếu đang ở chế độ hashtag, giữ nguyên trang search
+            const target = this._searchUrl || 'https://x.com/home';
+            await this.page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await randomDelay(2000, 3500);
         } catch {
             // Ignore
         }
     }
 
-    // ─── Đảm bảo đang ở trang hợp lệ (home hoặc compose) ───────────
+    // ─── Đảm bảo đang ở trang hợp lệ ───────────────────────────────
     async _ensureOnValidPage() {
         try {
             const url = this.page.url();
-            const isValid = url.includes('x.com/home') || url.includes('x.com/compose/post');
+            const isValid = url.includes(this._validUrlPattern) || url.includes('x.com/compose/post');
             if (!isValid) {
-                log.debug(`Đang ở trang lạ (${url}), quay về home...`, this.profileTag);
+                log.debug(`Đang ở trang lạ (${url}), quay về ${this._validUrlPattern}...`, this.profileTag);
                 await this._gotoHome();
             }
         } catch {
