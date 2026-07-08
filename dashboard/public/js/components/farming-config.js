@@ -34,6 +34,24 @@ export function render() {
                     <input type="text" class="form-control" id="f-hashtags" placeholder="#AI, $CASHAPP, crypto">
                 </div>
 
+                <div class="form-group">
+                    <label style="margin-bottom:8px;display:block">Hành động</label>
+                    <div style="display:flex;gap:24px">
+                        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+                            <input type="checkbox" id="f-action-like" style="width:15px;height:15px;accent-color:var(--accent)">
+                            👍 Like
+                        </label>
+                        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+                            <input type="checkbox" id="f-action-comment" style="width:15px;height:15px;accent-color:var(--accent)">
+                            💬 Comment
+                        </label>
+                        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+                            <input type="checkbox" id="f-action-follow" style="width:15px;height:15px;accent-color:var(--accent)">
+                            ➕ Follow
+                        </label>
+                    </div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>Interact probability (0-1)</label>
@@ -104,6 +122,10 @@ export async function init() {
         setVal('f-mode', f.mode || 'newsfeed');
         setVal('f-loops', f.loop_count || 3);
         setVal('f-hashtags', (f.hashtags || []).join(', '));
+        const actions = f.actions || {};
+        document.getElementById('f-action-like').checked    = actions.like    !== false;
+        document.getElementById('f-action-comment').checked = actions.comment !== false;
+        document.getElementById('f-action-follow').checked  = actions.follow  !== false;
         setVal('f-interact-prob', f.interact_probability ?? 0.1);
         setVal('f-max-interacts', f.max_interacts_per_loop ?? 0);
         setVal('f-lang-filter', f.language_filter || '');
@@ -142,6 +164,11 @@ async function handleSave(e) {
             mode: getVal('f-mode'),
             loop_count: getVal('f-loops'),
             hashtags: getVal('f-hashtags'),
+            actions: {
+                like:    document.getElementById('f-action-like').checked,
+                comment: document.getElementById('f-action-comment').checked,
+                follow:  document.getElementById('f-action-follow').checked,
+            },
             interact_probability: getVal('f-interact-prob'),
             max_interacts_per_loop: getVal('f-max-interacts'),
             language_filter: getVal('f-lang-filter'),

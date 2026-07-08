@@ -105,6 +105,13 @@ router.put('/farming', (req, res) => {
                     : update[field].split(',').map(s => s.trim());
             }
         }
+        if (update.actions !== undefined) {
+            config.farming.actions = {
+                like:    update.actions.like    !== false,
+                comment: update.actions.comment !== false,
+                follow:  update.actions.follow  !== false,
+            };
+        }
 
         writeConfig(config);
         res.json({ ok: true, farming: config.farming });
