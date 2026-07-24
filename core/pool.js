@@ -56,7 +56,7 @@ class WorkerPool {
         console.log('');
 
         // Reset grid layout cho auto-arrange cửa sổ browser
-        BrowserManager.resetGrid(this.maxConcurrent);
+        BrowserManager.resetGrid(Math.min(enabledProfiles.length, this.maxConcurrent));
 
         const sem = new Semaphore(this.maxConcurrent);
         const stagger = this.config.delay_between_profiles || { min: 2000, max: 5000 };
