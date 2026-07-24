@@ -123,6 +123,10 @@ class WorkerPool {
         appState.resetStats();
         appState.setFarmingActive(true);
 
+        const fw = this.config.farming_window || {};
+        BrowserManager.setFarmingWindow(fw.width || 0, fw.height || 0);
+        BrowserManager.resetGrid(1);
+
         const worker = new Worker(profileEntry, this.config);
         this.activeWorkers.add(worker);
 
