@@ -56,6 +56,8 @@ class WorkerPool {
         console.log('');
 
         // Reset grid layout cho auto-arrange cửa sổ browser
+        const fw = this.config.farming_window || {};
+        BrowserManager.setFarmingWindow(fw.width || 0, fw.height || 0);
         BrowserManager.resetGrid(Math.min(enabledProfiles.length, this.maxConcurrent));
 
         const sem = new Semaphore(this.maxConcurrent);

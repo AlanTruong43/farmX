@@ -79,6 +79,8 @@ async function getScreenSize() {
 let _nextSlotIndex = 0;
 let _totalSlots = 1;
 let _activeSlots = new Set();
+let _farmWinW = 0;  // 0 = auto (fill grid cell)
+let _farmWinH = 0;
 
 class BrowserManager {
     /**
@@ -89,6 +91,11 @@ class BrowserManager {
         _totalSlots = concurrentCount;
         _nextSlotIndex = 0;
         _activeSlots.clear();
+    }
+
+    static setFarmingWindow(w, h) {
+        _farmWinW = parseInt(w) || 0;
+        _farmWinH = parseInt(h) || 0;
     }
 
     /**
@@ -170,8 +177,8 @@ class BrowserManager {
             const screen = await getScreenSize();
             const { cols, rows } = this._calcGrid(_totalSlots);
 
-            const cellW = Math.floor(screen.width / cols);
-            const cellH = Math.floor(screen.height / rows);
+            const cellW = _farmWinW || Math.floor(screen.width / cols);
+            const cellH = _farmWinH || Math.floor(screen.height / rows);
 
             const col = slotIndex % cols;
             const row = Math.floor(slotIndex / cols);

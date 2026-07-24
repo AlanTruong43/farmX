@@ -55,6 +55,18 @@ export function render() {
                     </div>
                 </div>
 
+                <div class="form-row" style="margin-top:8px">
+                    <div class="form-group">
+                        <label>Chiều rộng cửa sổ farming (px)</label>
+                        <input type="number" class="form-control" id="g-farm-win-w" min="400" max="3840" placeholder="Tự động">
+                        <div class="form-hint">Để trống = tự động theo màn hình</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Chiều cao cửa sổ farming (px)</label>
+                        <input type="number" class="form-control" id="g-farm-win-h" min="300" max="2160" placeholder="Tự động">
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Lưu cấu hình chung</button>
             </form>
         </div>
@@ -114,6 +126,9 @@ export async function init() {
         setVal('g-max-profile-delay', dbp.max || 5000);
         setVal('g-stop-after', config.stop_profile_after_tasks !== false ? 'true' : 'false');
         setVal('g-log-level', config.log_level || 'INFO');
+        const fw = config.farming_window || {};
+        if (fw.width)  setVal('g-farm-win-w', fw.width);
+        if (fw.height) setVal('g-farm-win-h', fw.height);
 
         const ai = config.ai_provider || config.gemini || {};
         setVal('ai-type', ai.type || 'gemini');
@@ -152,6 +167,8 @@ export async function init() {
 async function handleSaveGeneral(e) {
     e.preventDefault();
     try {
+        const farmWinW = parseInt(getVal('g-farm-win-w')) || 0;
+        const farmWinH = parseInt(getVal('g-farm-win-h')) || 0;
         await api.updateGeneral({
             max_concurrent_profiles: parseInt(getVal('g-concurrent')) || 3,
             delay_between_profiles: {
@@ -160,6 +177,7 @@ async function handleSaveGeneral(e) {
             },
             stop_profile_after_tasks: getVal('g-stop-after') === 'true',
             log_level: getVal('g-log-level'),
+            farming_window: { width: farmWinW, height: farmWinH },
         });
         toast('Đã lưu cấu hình chung', 'success');
     } catch (err) {

@@ -138,6 +138,12 @@ router.put('/general', (req, res) => {
         if (update.screenshot_on_error !== undefined) {
             config.screenshot_on_error = !!update.screenshot_on_error;
         }
+        if (update.farming_window !== undefined) {
+            config.farming_window = {
+                width:  parseInt(update.farming_window.width)  || 0,
+                height: parseInt(update.farming_window.height) || 0,
+            };
+        }
         if (update.delay_between_profiles !== undefined) {
             config.delay_between_profiles = {
                 min: parseInt(update.delay_between_profiles.min) || 5000,
