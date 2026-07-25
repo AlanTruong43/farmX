@@ -177,14 +177,21 @@ class BrowserManager {
             const screen = await getScreenSize();
             const { cols, rows } = this._calcGrid(_totalSlots);
 
-            const cellW = _farmWinW || Math.floor(screen.width / cols);
-            const cellH = _farmWinH || Math.floor(screen.height / rows);
-
             const col = slotIndex % cols;
             const row = Math.floor(slotIndex / cols);
 
-            const x = col * cellW;
-            const y = row * cellH;
+            // Nếu user đặt kích thước cố định, dùng đó nhưng cap theo không gian còn lại
+            const autoW = Math.floor(screen.width / cols);
+            const autoH = Math.floor(screen.height / rows);
+            const baseW = _farmWinW || autoW;
+            const baseH = _farmWinH || autoH;
+
+            const x = col * baseW;
+            const y = row * baseH;
+
+            // Đảm bảo không vượt ra ngoài màn hình
+            const cellW = Math.min(baseW, screen.width - x);
+            const cellH = Math.min(baseH, screen.height - y);
 
             // Dùng CDP setWindowBounds
             const cdp = await page.createCDPSession();
