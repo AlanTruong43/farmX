@@ -31,8 +31,9 @@ class AIProvider {
         const text = tweetData.text || '';
         if (!text || text.trim().length < 5) return 'other';
 
-        // Quick heuristic trước — tránh gọi API không cần thiết
-        const viPattern = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+        // Quick heuristic trước — chỉ dùng ký tự ĐẶC TRƯNG tiếng Việt (không có trong tiếng Pháp/Tây Ban Nha)
+        // ă, â, ơ, ư, đ và các dấu đặc biệt như ọ, ộ, ợ, ứ, ự...
+        const viPattern = /[ăắặằẳẵâầấậẩẫơờớợởỡưừứựửữđảạẻẹịọỏụủỵỷỹ]/i;
         if (viPattern.test(text)) return 'vi';
 
         const nonLatinRatio = (text.replace(/[a-zA-Z0-9\s.,!?'"@#$%&*()-]/g, '').length) / Math.max(text.length, 1);

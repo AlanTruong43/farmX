@@ -25,6 +25,7 @@ class Farmer {
         this.minActionDelay = this.farming.min_delay_between_actions_ms ?? 3000;
         this.maxActionDelay = this.farming.max_delay_between_actions_ms ?? 8000;
         this.languageFilter = this.farming.language_filter || '';
+        log.debug(`Language filter: "${this.languageFilter || 'tất cả'}"`, profileTag);
         const actions = this.farming.actions || {};
         this.doLike    = actions.like    !== false;
         this.doComment = actions.comment !== false;
