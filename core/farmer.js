@@ -497,14 +497,23 @@ class Farmer {
             await replyBtn.click();
             await randomDelay(1500, 3000);
 
-            // Tìm text area trong reply dialog
-            const textArea = await this.page.waitForSelector(
-                selectors.reply.textArea,
+            // Đợi reply DIALOG mở — tránh nhầm với ô soạn bài ở đầu feed
+            const replyDialog = await this.page.waitForSelector(
+                '[role="dialog"]',
                 { visible: true, timeout: 8000 }
             ).catch(() => null);
 
+            if (!replyDialog) {
+                log.debug('Reply dialog không xuất hiện', this.profileTag, this._currentLoop);
+                await this._dismissDialog();
+                return false;
+            }
+
+            // Tìm textArea bên TRONG dialog (không phải ô soạn bài ngoài feed)
+            const textArea = await replyDialog.$(selectors.reply.textArea);
+
             if (!textArea) {
-                log.debug('Không tìm thấy ô nhập reply', this.profileTag, this._currentLoop);
+                log.debug('Không tìm thấy ô nhập reply trong dialog', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
                 return false;
             }
@@ -533,8 +542,8 @@ class Farmer {
 
             await randomDelay(500, 1000);
 
-            // Submit
-            const submitBtn = await this.page.$(selectors.reply.replySubmitBtn);
+            // Submit — tìm trong dialog để tránh nhầm nút post ngoài feed
+            const submitBtn = await replyDialog.$(selectors.reply.replySubmitBtn);
             if (!submitBtn) {
                 log.debug('Không tìm thấy nút Reply submit', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
