@@ -698,7 +698,6 @@ class Farmer {
     }
 
     async _replyToCommentsOnPost(postUrl, ownUsername) {
-        // Cho phép _ensureOnValidPage biết đang ở trang post detail
         const prevPattern = this._validUrlPattern;
         this._validUrlPattern = 'x.com';
         try {
@@ -714,42 +713,46 @@ class Farmer {
             await this.page.evaluate(() => window.scrollTo(0, 0));
             await sleep(500);
 
-            const tweets = await this.page.$$('article[data-testid="tweet"]');
-            if (tweets.length <= 1) return 0;
+            // Thu thập metadata từ các comment cards (không giữ ElementHandle)
+            const commentInfos = await this.page.evaluate((ownUser) => {
+                const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                const results = [];
+                for (let i = 1; i < articles.length; i++) { // bỏ bài gốc (index 0)
+                    const el = articles[i];
+                    // URL của tweet này
+                    const statusLink = el.querySelector('a[href*="/status/"]');
+                    const href = statusLink ? statusLink.getAttribute('href') : '';
+                    const m = href.match(/\/([^/]+)\/status\/(\d+)/);
+                    if (!m) continue;
+                    const tweetAuthor = m[1];
+                    const tweetId = m[2];
+                    // Kiểm tra có phải của mình không
+                    const isOwn = Array.from(el.querySelectorAll('a[href]'))
+                        .some(a => a.getAttribute('href').toLowerCase() === `/${ownUser.toLowerCase()}`);
+                    // Nội dung text
+                    const textEl = el.querySelector('div[data-testid="tweetText"]');
+                    const text = textEl ? textEl.innerText.trim() : '';
+                    results.push({ tweetId, tweetAuthor, tweetUrl: `https://x.com${href}`, isOwn, text, index: i });
+                }
+                return results;
+            }, ownUsername);
 
-            const commentCards = tweets.slice(1); // bỏ bài gốc
+            if (!commentInfos.length) return 0;
+
             let repliedCount = 0;
 
-            for (let i = 0; i < commentCards.length; i++) {
+            for (let i = 0; i < commentInfos.length; i++) {
                 if (this._stopRequested) break;
+                const info = commentInfos[i];
+                if (info.isOwn) continue;
 
-                const card = commentCards[i];
+                // Nếu tweet tiếp theo là của mình → đã reply rồi
+                const nextInfo = commentInfos[i + 1];
+                if (nextInfo?.isOwn) { i++; continue; }
 
-                // Kiểm tra tweet này có phải của mình không
-                const isOwn = await card.evaluate((el, user) => {
-                    for (const a of el.querySelectorAll('a[href]')) {
-                        if (a.getAttribute('href').toLowerCase() === `/${user.toLowerCase()}`) return true;
-                    }
-                    return false;
-                }, ownUsername).catch(() => false);
-                if (isOwn) continue;
+                if (!info.text) continue;
 
-                // Kiểm tra tweet tiếp theo có phải reply của mình không
-                if (i + 1 < commentCards.length) {
-                    const nextIsOwn = await commentCards[i + 1].evaluate((el, user) => {
-                        for (const a of el.querySelectorAll('a[href]')) {
-                            if (a.getAttribute('href').toLowerCase() === `/${user.toLowerCase()}`) return true;
-                        }
-                        return false;
-                    }, ownUsername).catch(() => false);
-                    if (nextIsOwn) { i++; continue; } // đã reply, skip luôn reply của mình
-                }
-
-                // Lấy nội dung comment
-                const tweetData = await this._extractTweetData(card).catch(() => null);
-                if (!tweetData || !tweetData.text?.trim()) continue;
-
-                // Detect language & generate reply
+                const tweetData = { text: info.text, authorName: info.tweetAuthor };
                 const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag).catch(() => 'en');
                 tweetData.detectedLang = detectedLang;
 
@@ -759,11 +762,14 @@ class Farmer {
                 });
                 if (!commentText) continue;
 
-                const success = await this._submitComment(card, commentText);
+                // Navigate đến tweet của comment để dùng reply dialog đáng tin cậy hơn
+                const success = await this._replyByNavigate(info.tweetUrl, commentText);
                 if (success) {
                     repliedCount++;
                     log.success(`💬 Reply: "${commentText.substring(0, 50)}..."`, this.profileTag);
                     await randomDelay(this.minActionDelay, this.maxActionDelay);
+                    // Quay lại post gốc và break (1 reply/post là đủ)
+                    break;
                 }
             }
 
@@ -773,6 +779,60 @@ class Farmer {
             return 0;
         } finally {
             this._validUrlPattern = prevPattern;
+        }
+    }
+
+    // ─── Navigate đến tweet và reply bằng nút Reply trên post detail ─
+    async _replyByNavigate(tweetUrl, commentText) {
+        try {
+            await this.page.goto(tweetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await sleep(2000);
+
+            // Tìm nút Reply trên bài gốc (article đầu tiên)
+            const firstArticle = await this.page.$('article[data-testid="tweet"]');
+            if (!firstArticle) return false;
+
+            const replyBtn = await firstArticle.$('button[data-testid="reply"]');
+            if (!replyBtn) return false;
+
+            await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
+            await sleep(500);
+            await replyBtn.click();
+            await sleep(2000);
+
+            // Tìm dialog hoặc inline textarea
+            const replyDialog = await this.page.$('[role="dialog"]');
+            const textArea = replyDialog
+                ? await replyDialog.$('div[data-testid="tweetTextarea_0"]')
+                : await this.page.$('div[data-testid="tweetTextarea_0"][contenteditable="true"]');
+
+            if (!textArea) {
+                log.debug('Không tìm thấy textarea sau khi click Reply', this.profileTag);
+                await this._dismissDialog();
+                return false;
+            }
+
+            await textArea.click();
+            await sleep(300);
+            await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
+            await sleep(800);
+
+            // Submit
+            const submitBtn = replyDialog
+                ? await replyDialog.$('button[data-testid="tweetButton"]')
+                : await this.page.$('button[data-testid="tweetButton"]');
+            if (!submitBtn) {
+                await this._dismissDialog();
+                return false;
+            }
+
+            await submitBtn.click();
+            await sleep(2500);
+            return true;
+        } catch (err) {
+            log.debug(`_replyByNavigate lỗi: ${err.message}`, this.profileTag);
+            await this._dismissDialog();
+            return false;
         }
     }
 
