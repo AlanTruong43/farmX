@@ -710,6 +710,8 @@ class Farmer {
             log.debug(`Check reply: ${postUrl}`, this.profileTag);
             this.page.once('dialog', d => d.accept().catch(() => {}));
             await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            log.debug(`Đã tải post page: ${this.page.url()}`, this.profileTag);
+            await this.page.screenshot({ path: `debug-post-${Date.now()}.png` }).catch(() => {});
             await sleep(2500);
 
             // Scroll nhẹ để load comments
