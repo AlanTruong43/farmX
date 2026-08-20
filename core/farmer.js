@@ -661,10 +661,12 @@ class Farmer {
     async replyToComments(ownUsername, postCount = 3) {
         log.info(`💬 Reply mode: kiểm tra ${postCount} bài của @${ownUsername}`, this.profileTag);
 
-        // Dismiss bất kỳ dialog nào đang chặn (Leave site? / Discard?)
-        await this._dismissSaveDialog().catch(() => {});
-        await this.page.keyboard.press('Escape').catch(() => {});
-        await sleep(500);
+        // Dừng navigation đang chạy dở (nếu có) và về trang trung tính
+        await this.page.evaluate(() => window.stop()).catch(() => {});
+        await sleep(300);
+        this.page.once('dialog', d => d.accept().catch(() => {}));
+        await this.page.goto('about:blank', { timeout: 10000 }).catch(() => {});
+        await sleep(300);
 
         // Vào profile lấy URLs bài đăng gần nhất
         this.page.once('dialog', d => d.accept().catch(() => {}));
