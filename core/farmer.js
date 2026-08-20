@@ -507,9 +507,7 @@ class Farmer {
             ]);
 
             if (!replyDialog && !inlineBox) {
-                const currentUrl = this.page.url();
-                log.debug(`Reply dialog không xuất hiện (url: ${currentUrl})`, this.profileTag, this._currentLoop);
-                await this.page.screenshot({ path: `debug-reply-${Date.now()}.png`, fullPage: false }).catch(() => {});
+                log.debug('Reply dialog không xuất hiện', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
                 return false;
             }
@@ -705,8 +703,6 @@ class Farmer {
             log.debug(`Check reply: ${postUrl}`, this.profileTag);
             this.page.once('dialog', d => d.accept().catch(() => {}));
             await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            log.debug(`Đã tải post page: ${this.page.url()}`, this.profileTag);
-            await this.page.screenshot({ path: `debug-post-${Date.now()}.png` }).catch(() => {});
             await sleep(2500);
 
             // Scroll nhẹ để load comments
