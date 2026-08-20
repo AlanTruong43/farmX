@@ -661,6 +661,11 @@ class Farmer {
     async replyToComments(ownUsername, postCount = 3) {
         log.info(`💬 Reply mode: kiểm tra ${postCount} bài của @${ownUsername}`, this.profileTag);
 
+        // Dismiss bất kỳ dialog nào đang chặn (Leave site? / Discard?)
+        await this._dismissSaveDialog().catch(() => {});
+        await this.page.keyboard.press('Escape').catch(() => {});
+        await sleep(500);
+
         // Vào profile lấy URLs bài đăng gần nhất
         this.page.once('dialog', d => d.accept().catch(() => {}));
         await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
