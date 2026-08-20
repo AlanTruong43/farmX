@@ -792,15 +792,34 @@ class Farmer {
             log.debug('Đã tải trang tweet', this.profileTag);
             await sleep(2000);
 
-            // Tìm nút Reply trên bài gốc (article đầu tiên)
-            const firstArticle = await this.page.$('article[data-testid="tweet"]');
-            if (!firstArticle) return false;
+            // Tìm article khớp với tweetUrl (không phải firstArticle vì X hiển thị parent tweet trước)
+            const tweetIdMatch = tweetUrl.match(/\/status\/(\d+)/);
+            const targetTweetId = tweetIdMatch ? tweetIdMatch[1] : null;
 
-            const replyBtn = await firstArticle.$('button[data-testid="reply"]');
+            const targetArticle = targetTweetId
+                ? await this.page.evaluateHandle((tweetId) => {
+                    const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                    for (const el of articles) {
+                        const timeEl = el.querySelector('time');
+                        const a = timeEl ? timeEl.closest('a') : null;
+                        if (a && a.getAttribute('href') && a.getAttribute('href').includes(`/status/${tweetId}`)) {
+                            return el;
+                        }
+                    }
+                    return null;
+                }, targetTweetId)
+                : null;
+
+            const targetEl = (targetArticle && (await targetArticle.evaluate(el => el !== null)))
+                ? targetArticle
+                : await this.page.$('article[data-testid="tweet"]');
+            if (!targetEl) return false;
+
+            const replyBtn = await targetEl.$('button[data-testid="reply"]');
             if (!replyBtn) return false;
 
             await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
-            await sleep(500);
+            await sleep(600);
             await replyBtn.click();
             await sleep(2000);
 
