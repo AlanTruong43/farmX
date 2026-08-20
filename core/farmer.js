@@ -763,13 +763,12 @@ class Farmer {
                 });
                 if (!commentText) continue;
 
-                // Navigate đến tweet của comment để dùng reply dialog đáng tin cậy hơn
-                const success = await this._replyByNavigate(info.tweetUrl, commentText);
+                // Click reply trực tiếp trên comment article (ở lại trang post gốc)
+                const success = await this._replyOnPostPage(info.tweetId, commentText);
                 if (success) {
                     repliedCount++;
                     log.success(`💬 Reply: "${commentText.substring(0, 50)}..."`, this.profileTag);
                     await randomDelay(this.minActionDelay, this.maxActionDelay);
-                    // Quay lại post gốc và break (1 reply/post là đủ)
                     break;
                 }
             }
@@ -780,6 +779,65 @@ class Farmer {
             return 0;
         } finally {
             this._validUrlPattern = prevPattern;
+        }
+    }
+
+    // ─── Click reply trực tiếp trên comment article trong trang post ────
+    async _replyOnPostPage(tweetId, commentText) {
+        try {
+            // Tìm reply button của comment có tweetId khớp
+            const replyBtn = await this.page.evaluateHandle((id) => {
+                const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                for (const el of articles) {
+                    const timeEl = el.querySelector('time');
+                    const a = timeEl ? timeEl.closest('a') : null;
+                    if (a && (a.getAttribute('href') || '').includes(`/status/${id}`)) {
+                        return el.querySelector('button[data-testid="reply"]');
+                    }
+                }
+                return null;
+            }, tweetId);
+
+            const btnNull = await replyBtn.evaluate(el => el === null);
+            if (btnNull) {
+                log.debug(`Không tìm thấy reply button cho tweet ${tweetId}`, this.profileTag);
+                return false;
+            }
+
+            await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
+            await sleep(600);
+            await replyBtn.click();
+            await sleep(2000);
+
+            // Tìm dialog reply hoặc inline textarea
+            const replyDialog = await this.page.$('[role="dialog"]');
+            const textArea = replyDialog
+                ? await replyDialog.$('div[data-testid="tweetTextarea_0"]')
+                : await this.page.$('div[data-testid="tweetTextarea_0"][contenteditable="true"]');
+
+            if (!textArea) {
+                log.debug('Không tìm thấy textarea reply', this.profileTag);
+                await this._dismissDialog();
+                return false;
+            }
+
+            await textArea.click();
+            await sleep(300);
+            await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
+            await sleep(800);
+
+            const submitBtn = replyDialog
+                ? await replyDialog.$('button[data-testid="tweetButton"]')
+                : await this.page.$('button[data-testid="tweetButton"]');
+            if (!submitBtn) { await this._dismissDialog(); return false; }
+
+            await submitBtn.click();
+            await sleep(2500);
+            return true;
+        } catch (err) {
+            log.debug(`_replyOnPostPage lỗi: ${err.message}`, this.profileTag);
+            await this._dismissDialog();
+            return false;
         }
     }
 
