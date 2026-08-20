@@ -52,6 +52,21 @@ export function render() {
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label style="margin-bottom:8px;display:block">Reply bình luận trên bài của mình</label>
+                    <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+                        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+                            <input type="checkbox" id="f-reply-enabled" style="width:15px;height:15px;accent-color:var(--accent)">
+                            Bật tự động reply
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+                            Số bài kiểm tra:
+                            <input type="number" id="f-reply-count" class="form-control" min="1" max="20" style="width:70px;display:inline-block">
+                        </label>
+                    </div>
+                    <div class="form-hint" style="margin-top:6px">Reply chạy 1 lần đầu mỗi session, trước khi farm</div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>Interact probability (0-1)</label>
@@ -122,6 +137,9 @@ export async function init() {
         setVal('f-mode', f.mode || 'newsfeed');
         setVal('f-loops', f.loop_count || 3);
         setVal('f-hashtags', (f.hashtags || []).join(', '));
+        const reply = f.reply || {};
+        document.getElementById('f-reply-enabled').checked = !!reply.enabled;
+        setVal('f-reply-count', reply.post_count || 3);
         const actions = f.actions || {};
         document.getElementById('f-action-like').checked    = actions.like    !== false;
         document.getElementById('f-action-comment').checked = actions.comment !== false;
@@ -164,6 +182,10 @@ async function handleSave(e) {
             mode: getVal('f-mode'),
             loop_count: getVal('f-loops'),
             hashtags: getVal('f-hashtags'),
+            reply: {
+                enabled:    document.getElementById('f-reply-enabled').checked,
+                post_count: parseInt(getVal('f-reply-count')) || 3,
+            },
             actions: {
                 like:    document.getElementById('f-action-like').checked,
                 comment: document.getElementById('f-action-comment').checked,

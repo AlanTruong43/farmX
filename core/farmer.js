@@ -648,6 +648,120 @@ class Farmer {
         }
     }
 
+    // ─── Reply to comments on own posts ─────────────────────────────
+    async replyToComments(ownUsername, postCount = 3) {
+        log.info(`💬 Reply mode: kiểm tra ${postCount} bài của @${ownUsername}`, this.profileTag);
+
+        // Vào profile lấy URLs bài đăng gần nhất
+        await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await sleep(2500);
+
+        const postUrls = await this.page.evaluate((user, max) => {
+            const seen = new Set();
+            const result = [];
+            const links = document.querySelectorAll('a[href*="/status/"]');
+            for (const a of links) {
+                const href = a.getAttribute('href') || '';
+                if (!href.toLowerCase().startsWith(`/${user.toLowerCase()}/status/`)) continue;
+                const m = href.match(/\/status\/(\d+)/);
+                if (m && !seen.has(m[1])) {
+                    seen.add(m[1]);
+                    result.push(`https://x.com/${user}/status/${m[1]}`);
+                    if (result.length >= max) break;
+                }
+            }
+            return result;
+        }, ownUsername, postCount);
+
+        log.debug(`Tìm thấy ${postUrls.length} bài để check reply`, this.profileTag);
+
+        let totalReplied = 0;
+        for (const url of postUrls) {
+            if (this._stopRequested) break;
+            totalReplied += await this._replyToCommentsOnPost(url, ownUsername);
+        }
+
+        log.info(`Reply hoàn tất: ${totalReplied} comment mới`, this.profileTag);
+
+        // Quay về home
+        await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+        await sleep(2000);
+    }
+
+    async _replyToCommentsOnPost(postUrl, ownUsername) {
+        try {
+            log.debug(`Check reply: ${postUrl}`, this.profileTag);
+            await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await sleep(2500);
+
+            // Scroll nhẹ để load comments
+            for (let i = 0; i < 3; i++) {
+                await this.page.evaluate(() => window.scrollBy(0, 600));
+                await sleep(800);
+            }
+            await this.page.evaluate(() => window.scrollTo(0, 0));
+            await sleep(500);
+
+            const tweets = await this.page.$$('article[data-testid="tweet"]');
+            if (tweets.length <= 1) return 0;
+
+            const commentCards = tweets.slice(1); // bỏ bài gốc
+            let repliedCount = 0;
+
+            for (let i = 0; i < commentCards.length; i++) {
+                if (this._stopRequested) break;
+
+                const card = commentCards[i];
+
+                // Kiểm tra tweet này có phải của mình không
+                const isOwn = await card.evaluate((el, user) => {
+                    for (const a of el.querySelectorAll('a[href]')) {
+                        if (a.getAttribute('href').toLowerCase() === `/${user.toLowerCase()}`) return true;
+                    }
+                    return false;
+                }, ownUsername).catch(() => false);
+                if (isOwn) continue;
+
+                // Kiểm tra tweet tiếp theo có phải reply của mình không
+                if (i + 1 < commentCards.length) {
+                    const nextIsOwn = await commentCards[i + 1].evaluate((el, user) => {
+                        for (const a of el.querySelectorAll('a[href]')) {
+                            if (a.getAttribute('href').toLowerCase() === `/${user.toLowerCase()}`) return true;
+                        }
+                        return false;
+                    }, ownUsername).catch(() => false);
+                    if (nextIsOwn) { i++; continue; } // đã reply, skip luôn reply của mình
+                }
+
+                // Lấy nội dung comment
+                const tweetData = await this._extractTweetData(card).catch(() => null);
+                if (!tweetData || !tweetData.text?.trim()) continue;
+
+                // Detect language & generate reply
+                const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag).catch(() => 'en');
+                tweetData.detectedLang = detectedLang;
+
+                const commentText = await this.ai.generateComment(tweetData, this.profileTag).catch(err => {
+                    log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
+                    return null;
+                });
+                if (!commentText) continue;
+
+                const success = await this._submitComment(card, commentText);
+                if (success) {
+                    repliedCount++;
+                    log.success(`💬 Reply: "${commentText.substring(0, 50)}..."`, this.profileTag);
+                    await randomDelay(this.minActionDelay, this.maxActionDelay);
+                }
+            }
+
+            return repliedCount;
+        } catch (err) {
+            log.warn(`Reply lỗi tại ${postUrl}: ${err.message}`, this.profileTag);
+            return 0;
+        }
+    }
+
     // ─── Dismiss dialog + handle "Discard post?" popup ──────────────
     async _dismissDialog() {
         try {

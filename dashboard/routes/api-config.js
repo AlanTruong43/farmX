@@ -105,6 +105,12 @@ router.put('/farming', (req, res) => {
                     : update[field].split(',').map(s => s.trim());
             }
         }
+        if (update.reply !== undefined) {
+            config.farming.reply = {
+                enabled:    !!update.reply.enabled,
+                post_count: parseInt(update.reply.post_count) || 3,
+            };
+        }
         if (update.actions !== undefined) {
             config.farming.actions = {
                 like:    update.actions.like    !== false,

@@ -127,6 +127,14 @@ class Worker {
                 }
                 if (this._stopRequested) break;
 
+                // Reply comments trên bài của mình (nếu bật, chỉ ở loop đầu)
+                const replyConfig = this.farming.reply || {};
+                if (replyConfig.enabled && loop === 1 && !this._stopRequested) {
+                    await farmer.replyToComments(this.xUsername, replyConfig.post_count || 3);
+                }
+
+                if (this._stopRequested) break;
+
                 farmer.setLoop(loop, loopCount);
 
                 let loopStats;
