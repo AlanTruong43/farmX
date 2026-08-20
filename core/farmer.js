@@ -494,6 +494,9 @@ class Farmer {
                 return false;
             }
 
+            // Scroll element vào giữa viewport trước khi click
+            await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+            await sleep(600);
             await replyBtn.click();
             await randomDelay(1500, 3000);
 
