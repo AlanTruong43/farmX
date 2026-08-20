@@ -689,6 +689,9 @@ class Farmer {
     }
 
     async _replyToCommentsOnPost(postUrl, ownUsername) {
+        // Cho phép _ensureOnValidPage biết đang ở trang post detail
+        const prevPattern = this._validUrlPattern;
+        this._validUrlPattern = 'x.com';
         try {
             log.debug(`Check reply: ${postUrl}`, this.profileTag);
             await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -759,6 +762,8 @@ class Farmer {
         } catch (err) {
             log.warn(`Reply lỗi tại ${postUrl}: ${err.message}`, this.profileTag);
             return 0;
+        } finally {
+            this._validUrlPattern = prevPattern;
         }
     }
 
