@@ -721,10 +721,11 @@ class Farmer {
                 const results = [];
                 for (let i = 1; i < articles.length; i++) { // bỏ bài gốc (index 0)
                     const el = articles[i];
-                    // URL của tweet này
-                    const statusLink = el.querySelector('a[href*="/status/"]');
-                    const href = statusLink ? statusLink.getAttribute('href') : '';
-                    const m = href.match(/\/([^/]+)\/status\/(\d+)/);
+                    // Dùng link trên <time> để lấy permalink chính xác của tweet
+                    const timeEl = el.querySelector('time');
+                    const permalinkAnchor = timeEl ? timeEl.closest('a') : null;
+                    const href = permalinkAnchor ? permalinkAnchor.getAttribute('href') : '';
+                    const m = href ? href.match(/\/([^/]+)\/status\/(\d+)/) : null;
                     if (!m) continue;
                     const tweetAuthor = m[1];
                     const tweetId = m[2];
@@ -787,8 +788,10 @@ class Farmer {
     // ─── Navigate đến tweet và reply bằng nút Reply trên post detail ─
     async _replyByNavigate(tweetUrl, commentText) {
         try {
+            log.debug(`Mở tweet để reply: ${tweetUrl}`, this.profileTag);
             this.page.once('dialog', d => d.accept().catch(() => {}));
             await this.page.goto(tweetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            log.debug('Đã tải trang tweet', this.profileTag);
             await sleep(2000);
 
             // Tìm nút Reply trên bài gốc (article đầu tiên)
