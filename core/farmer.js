@@ -662,6 +662,7 @@ class Farmer {
         log.info(`💬 Reply mode: kiểm tra ${postCount} bài của @${ownUsername}`, this.profileTag);
 
         // Vào profile lấy URLs bài đăng gần nhất
+        this.page.once('dialog', d => d.accept().catch(() => {}));
         await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await sleep(2500);
 
@@ -702,6 +703,7 @@ class Farmer {
         this._validUrlPattern = 'x.com';
         try {
             log.debug(`Check reply: ${postUrl}`, this.profileTag);
+            this.page.once('dialog', d => d.accept().catch(() => {}));
             await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await sleep(2500);
 
@@ -785,6 +787,7 @@ class Farmer {
     // ─── Navigate đến tweet và reply bằng nút Reply trên post detail ─
     async _replyByNavigate(tweetUrl, commentText) {
         try {
+            this.page.once('dialog', d => d.accept().catch(() => {}));
             await this.page.goto(tweetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
             await sleep(2000);
 
