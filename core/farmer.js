@@ -500,20 +500,24 @@ class Farmer {
             await replyBtn.click();
             await randomDelay(1500, 3000);
 
-            // Đợi reply DIALOG mở — tránh nhầm với ô soạn bài ở đầu feed
-            const replyDialog = await this.page.waitForSelector(
-                '[role="dialog"]',
-                { visible: true, timeout: 8000 }
-            ).catch(() => null);
+            // Đợi reply DIALOG mở (trên feed) hoặc inline reply box (trên post detail)
+            const [replyDialog, inlineBox] = await Promise.all([
+                this.page.waitForSelector('[role="dialog"]', { visible: true, timeout: 10000 }).catch(() => null),
+                this.page.waitForSelector('div[data-testid="tweetTextarea_0"][contenteditable="true"]', { visible: true, timeout: 10000 }).catch(() => null),
+            ]);
 
-            if (!replyDialog) {
-                log.debug('Reply dialog không xuất hiện', this.profileTag, this._currentLoop);
+            if (!replyDialog && !inlineBox) {
+                const currentUrl = this.page.url();
+                log.debug(`Reply dialog không xuất hiện (url: ${currentUrl})`, this.profileTag, this._currentLoop);
+                await this.page.screenshot({ path: `debug-reply-${Date.now()}.png`, fullPage: false }).catch(() => {});
                 await this._dismissDialog();
                 return false;
             }
 
-            // Tìm textArea bên TRONG dialog (không phải ô soạn bài ngoài feed)
-            const textArea = await replyDialog.$(selectors.reply.textArea);
+            // Nếu có dialog, tìm textarea trong dialog; nếu không có dialog thì dùng inline box
+            const textArea = replyDialog
+                ? await replyDialog.$(selectors.reply.textArea)
+                : inlineBox;
 
             if (!textArea) {
                 log.debug('Không tìm thấy ô nhập reply trong dialog', this.profileTag, this._currentLoop);
@@ -545,8 +549,10 @@ class Farmer {
 
             await randomDelay(500, 1000);
 
-            // Submit — tìm trong dialog để tránh nhầm nút post ngoài feed
-            const submitBtn = await replyDialog.$(selectors.reply.replySubmitBtn);
+            // Submit — tìm trong dialog (feed) hoặc trên page (inline)
+            const submitBtn = replyDialog
+                ? await replyDialog.$(selectors.reply.replySubmitBtn)
+                : await this.page.$(selectors.reply.replySubmitBtn);
             if (!submitBtn) {
                 log.debug('Không tìm thấy nút Reply submit', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
@@ -556,7 +562,7 @@ class Farmer {
             await submitBtn.click();
 
             // Đợi reply dialog đóng (verify submit thành công)
-            const submitted = await this._waitForDialogClose(6000);
+            const submitted = replyDialog ? await this._waitForDialogClose(6000) : await sleep(3000).then(() => true);
             if (submitted) {
                 await sleep(1000);
                 log.success(`💬 Commented: "${commentText.substring(0, 50)}..."`, this.profileTag, this._currentLoop);
