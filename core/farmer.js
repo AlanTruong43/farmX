@@ -713,13 +713,20 @@ class Farmer {
             await this.page.evaluate(() => window.scrollTo(0, 0));
             await sleep(500);
 
+            // Đọc nội dung bài gốc (article đầu tiên)
+            const postText = await this.page.evaluate(() => {
+                const firstArticle = document.querySelector('article[data-testid="tweet"]');
+                if (!firstArticle) return '';
+                const textEl = firstArticle.querySelector('div[data-testid="tweetText"]');
+                return textEl ? textEl.innerText.trim() : '';
+            });
+
             // Thu thập metadata từ các comment cards (không giữ ElementHandle)
             const commentInfos = await this.page.evaluate((ownUser) => {
                 const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
                 const results = [];
-                for (let i = 1; i < articles.length; i++) { // bỏ bài gốc (index 0)
+                for (let i = 1; i < articles.length; i++) {
                     const el = articles[i];
-                    // Dùng link trên <time> để lấy permalink chính xác của tweet
                     const timeEl = el.querySelector('time');
                     const permalinkAnchor = timeEl ? timeEl.closest('a') : null;
                     const href = permalinkAnchor ? permalinkAnchor.getAttribute('href') : '';
@@ -727,13 +734,11 @@ class Farmer {
                     if (!m) continue;
                     const tweetAuthor = m[1];
                     const tweetId = m[2];
-                    // Kiểm tra có phải của mình không
                     const isOwn = Array.from(el.querySelectorAll('a[href]'))
                         .some(a => a.getAttribute('href').toLowerCase() === `/${ownUser.toLowerCase()}`);
-                    // Nội dung text
                     const textEl = el.querySelector('div[data-testid="tweetText"]');
                     const text = textEl ? textEl.innerText.trim() : '';
-                    results.push({ tweetId, tweetAuthor, tweetUrl: `https://x.com${href}`, isOwn, text, index: i });
+                    results.push({ tweetId, tweetAuthor, tweetUrl: `https://x.com${href}`, isOwn, text });
                 }
                 return results;
             }, ownUsername);
@@ -741,35 +746,37 @@ class Farmer {
             if (!commentInfos.length) return 0;
 
             let repliedCount = 0;
+            const maxRepliesPerPost = this.farming.reply?.replies_per_post ?? 3;
 
             for (let i = 0; i < commentInfos.length; i++) {
-                if (this._stopRequested) break;
+                if (this._stopRequested || repliedCount >= maxRepliesPerPost) break;
                 const info = commentInfos[i];
                 if (info.isOwn) continue;
 
-                // Nếu tweet tiếp theo là của mình → đã reply rồi
+                // Nếu tweet tiếp theo là của mình → đã reply comment này rồi, bỏ qua
                 const nextInfo = commentInfos[i + 1];
                 if (nextInfo?.isOwn) { i++; continue; }
 
                 if (!info.text) continue;
 
-                const tweetData = { text: info.text, authorName: info.tweetAuthor };
-                const detectedLang = await this.ai.detectLanguage(tweetData, this.profileTag).catch(() => 'en');
-                tweetData.detectedLang = detectedLang;
+                const detectedLang = await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi');
 
-                const commentText = await this.ai.generateComment(tweetData, this.profileTag).catch(err => {
+                const commentText = await this.ai.generateReply({
+                    postText,
+                    commentText: info.text,
+                    commentAuthor: info.tweetAuthor,
+                    detectedLang,
+                }, this.profileTag).catch(err => {
                     log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
                     return null;
                 });
                 if (!commentText) continue;
 
-                // Click reply trực tiếp trên comment article (ở lại trang post gốc)
                 const success = await this._replyOnPostPage(info.tweetId, commentText);
                 if (success) {
                     repliedCount++;
-                    log.success(`💬 Reply: "${commentText.substring(0, 50)}..."`, this.profileTag);
+                    log.success(`💬 Reply @${info.tweetAuthor}: "${commentText.substring(0, 50)}..."`, this.profileTag);
                     await randomDelay(this.minActionDelay, this.maxActionDelay);
-                    break;
                 }
             }
 

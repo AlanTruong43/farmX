@@ -75,6 +75,34 @@ class DEMOClient extends AIProvider {
         return cleaned;
     }
 
+    async generateReply(replyData, profileTag = '') {
+        const { detectedLang } = replyData;
+        const userContent = this._buildReplyDescription(replyData);
+
+        let langInstruction = '';
+        if (detectedLang === 'vi') langInstruction = '\n[YÊU CẦU: Reply bằng TIẾNG VIỆT]';
+        else if (detectedLang === 'en') langInstruction = '\n[REQUIREMENT: Reply in ENGLISH]';
+
+        const systemPrompt = this.replyPrompt || this.systemPrompt;
+
+        const response = await this._request({
+            model: this.model,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent + langInstruction },
+            ],
+            max_tokens: this.maxTokens,
+            temperature: 0.9,
+        });
+
+        const reply = response?.choices?.[0]?.message?.content?.trim();
+        if (!reply) throw new Error('API trả về rỗng');
+        const cleaned = reply.replace(/^["']|["']$/g, '').trim();
+        this._trackComment(cleaned);
+        log.debug(`DEMO reply: "${cleaned}"`, profileTag);
+        return cleaned;
+    }
+
     // Language detection bằng AI — gọi riêng 1 request nhẹ
     async _detectLangRequest(text) {
         const response = await this._request({

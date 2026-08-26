@@ -21,6 +21,7 @@ function createAIProvider(config = {}) {
             api_key: ap.api_key || '',
             model: ap.model || 'gpt-4.1-nano',
             comment_prompt: ap.comment_prompt,
+            reply_prompt: ap.reply_prompt,
             max_tokens: ap.max_tokens || 100,
         });
     }
@@ -31,6 +32,7 @@ function createAIProvider(config = {}) {
         api_key: ap.api_key || '',
         model: ap.model || 'gemini-2.0-flash',
         comment_prompt: ap.comment_prompt,
+        reply_prompt: ap.reply_prompt,
         max_tokens: ap.max_tokens || 100,
     });
 }

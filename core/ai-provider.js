@@ -8,6 +8,7 @@ class AIProvider {
         this.apiKey = config.api_key || '';
         this.model = config.model || '';
         this.systemPrompt = config.comment_prompt || 'Write a short, natural comment for this tweet.';
+        this.replyPrompt = config.reply_prompt || null;
         this.maxTokens = config.max_tokens || 100;
         // Track recent comments để tránh trùng lặp (giữ 30 comment gần nhất)
         this._recentComments = [];
@@ -21,6 +22,16 @@ class AIProvider {
      */
     async generateComment(tweetData, profileTag = '') {
         throw new Error('generateComment() phải được implement bởi subclass');
+    }
+
+    /**
+     * Tạo reply cho comment dựa trên nội dung bài gốc + comment người dùng
+     * @param {object} replyData - { postText, commentText, commentAuthor, detectedLang }
+     * @param {string} profileTag
+     * @returns {Promise<string>}
+     */
+    async generateReply(replyData, profileTag = '') {
+        throw new Error('generateReply() phải được implement bởi subclass');
     }
 
     /**
@@ -101,6 +112,18 @@ class AIProvider {
         }
 
         return desc.trim() || 'Một tweet ngắn trên timeline.';
+    }
+
+    /**
+     * Xây dựng mô tả cho reply prompt
+     */
+    _buildReplyDescription(replyData) {
+        const { postText, commentText, commentAuthor } = replyData;
+        let desc = '';
+        if (postText) desc += `Bài viết gốc: "${postText}"`;
+        if (commentAuthor) desc += `\nBình luận của @${commentAuthor}: "${commentText}"`;
+        else if (commentText) desc += `\nBình luận: "${commentText}"`;
+        return desc.trim();
     }
 
     /**

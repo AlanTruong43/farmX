@@ -15,7 +15,13 @@ class Worker {
         this.profileTag = profileEntry.username || profileEntry.genlogin_id.toString().substring(0, 8);
         this.enabled = profileEntry.enabled !== false;
         this.config = config;
-        this.farming = config.farming || {};
+        // Profile-level farming overrides global config
+        const profileFarming = profileEntry.farming || {};
+        this.farming = { ...config.farming || {}, ...profileFarming };
+        // Profile-level reply overrides
+        if (profileEntry.reply !== undefined) {
+            this.farming.reply = { ...(this.farming.reply || {}), ...profileEntry.reply };
+        }
 
         this.genlogin = new GenLoginClient(config.genlogin_url);
         this.browser = null;
