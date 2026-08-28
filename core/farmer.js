@@ -759,22 +759,17 @@ class Farmer {
                     if (!info.text) continue;
 
                     foundUnreplied = true;
-                    const detectedLang = await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi');
-                    const commentText = await this.ai.generateReply({
+                    // Truyền replyData vào — AI chỉ được gọi SAU khi textarea xuất hiện
+                    const replyData = {
                         postText,
                         commentText: info.text,
                         commentAuthor: info.tweetAuthor,
-                        detectedLang,
-                    }, this.profileTag).catch(err => {
-                        log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
-                        return null;
-                    });
-                    if (!commentText) break;
-
-                    const success = await this._replyOnPostPage(info.tweetId, commentText);
-                    if (success) {
+                        detectedLang: await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi'),
+                    };
+                    const result = await this._replyOnPostPage(info.tweetId, replyData);
+                    if (result) {
                         repliedCount++;
-                        log.success(`💬 Reply @${info.tweetAuthor}: "${commentText.substring(0, 50)}..."`, this.profileTag);
+                        log.success(`💬 Reply @${info.tweetAuthor}: "${result.substring(0, 50)}..."`, this.profileTag);
                         await randomDelay(this.minActionDelay, this.maxActionDelay);
                     }
                     break; // 1 reply mỗi lần navigate, rồi reload lại
@@ -792,8 +787,8 @@ class Farmer {
         }
     }
 
-    // ─── Click reply trực tiếp trên comment article trong trang post ────
-    async _replyOnPostPage(tweetId, commentText) {
+    // ─── Click reply button → chờ textarea → gọi AI → type → submit ──
+    async _replyOnPostPage(tweetId, replyData) {
         try {
             // Tìm reply button của comment có tweetId khớp
             const replyBtn = await this.page.evaluateHandle((id) => {
@@ -811,24 +806,45 @@ class Farmer {
             const btnNull = await replyBtn.evaluate(el => el === null);
             if (btnNull) {
                 log.debug(`Không tìm thấy reply button cho tweet ${tweetId}`, this.profileTag);
-                return false;
+                return null;
             }
 
             await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
             await sleep(600);
             await replyBtn.click();
-            await sleep(2000);
 
-            // Tìm dialog reply hoặc inline textarea
-            const replyDialog = await this.page.$('[role="dialog"]');
-            const textArea = replyDialog
-                ? await replyDialog.$('div[data-testid="tweetTextarea_0"]')
-                : await this.page.$('div[data-testid="tweetTextarea_0"][contenteditable="true"]');
+            // Chờ textarea xuất hiện (tối đa 5s) — không cứng sleep 2000ms
+            let textArea = null;
+            let replyDialog = null;
+            try {
+                await this.page.waitForSelector(
+                    '[role="dialog"] div[data-testid="tweetTextarea_0"], div[data-testid="tweetTextarea_0"][contenteditable="true"]',
+                    { timeout: 5000 }
+                );
+                replyDialog = await this.page.$('[role="dialog"]');
+                textArea = replyDialog
+                    ? await replyDialog.$('div[data-testid="tweetTextarea_0"]')
+                    : await this.page.$('div[data-testid="tweetTextarea_0"][contenteditable="true"]');
+            } catch {
+                log.debug('Không tìm thấy textarea reply sau 5s', this.profileTag);
+                await this._dismissDialog();
+                return null;
+            }
 
             if (!textArea) {
-                log.debug('Không tìm thấy textarea reply', this.profileTag);
+                log.debug('Textarea reply không khả dụng', this.profileTag);
                 await this._dismissDialog();
-                return false;
+                return null;
+            }
+
+            // Textarea đã sẵn sàng → GỌI AI tạo nội dung
+            const commentText = await this.ai.generateReply(replyData, this.profileTag).catch(err => {
+                log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
+                return null;
+            });
+            if (!commentText) {
+                await this._dismissDialog();
+                return null;
             }
 
             await textArea.click();
@@ -839,15 +855,15 @@ class Farmer {
             const submitBtn = replyDialog
                 ? await replyDialog.$('button[data-testid="tweetButton"]')
                 : await this.page.$('button[data-testid="tweetButton"]');
-            if (!submitBtn) { await this._dismissDialog(); return false; }
+            if (!submitBtn) { await this._dismissDialog(); return null; }
 
             await submitBtn.click();
             await sleep(2500);
-            return true;
+            return commentText; // trả về text để log
         } catch (err) {
             log.debug(`_replyOnPostPage lỗi: ${err.message}`, this.profileTag);
             await this._dismissDialog();
-            return false;
+            return null;
         }
     }
 
