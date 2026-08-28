@@ -699,85 +699,88 @@ class Farmer {
     async _replyToCommentsOnPost(postUrl, ownUsername) {
         const prevPattern = this._validUrlPattern;
         this._validUrlPattern = 'x.com';
+        const maxRepliesPerPost = this.farming.reply?.replies_per_post ?? 3;
+        let repliedCount = 0;
+
         try {
-            log.debug(`Check reply: ${postUrl}`, this.profileTag);
-            this.page.once('dialog', d => d.accept().catch(() => {}));
-            await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await sleep(2500);
+            // Mỗi attempt: navigate lại trang để có DOM sạch, tránh "execution context destroyed"
+            for (let attempt = 0; attempt < maxRepliesPerPost; attempt++) {
+                if (this._stopRequested) break;
 
-            // Scroll nhẹ để load comments
-            for (let i = 0; i < 3; i++) {
-                await this.page.evaluate(() => window.scrollBy(0, 600));
-                await sleep(800);
-            }
-            await this.page.evaluate(() => window.scrollTo(0, 0));
-            await sleep(500);
+                log.debug(`Check reply (lần ${attempt + 1}): ${postUrl}`, this.profileTag);
+                this.page.once('dialog', d => d.accept().catch(() => {}));
+                await this.page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await sleep(2000);
 
-            // Đọc nội dung bài gốc (article đầu tiên)
-            const postText = await this.page.evaluate(() => {
-                const firstArticle = document.querySelector('article[data-testid="tweet"]');
-                if (!firstArticle) return '';
-                const textEl = firstArticle.querySelector('div[data-testid="tweetText"]');
-                return textEl ? textEl.innerText.trim() : '';
-            });
-
-            // Thu thập metadata từ các comment cards (không giữ ElementHandle)
-            const commentInfos = await this.page.evaluate((ownUser) => {
-                const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
-                const results = [];
-                for (let i = 1; i < articles.length; i++) {
-                    const el = articles[i];
-                    const timeEl = el.querySelector('time');
-                    const permalinkAnchor = timeEl ? timeEl.closest('a') : null;
-                    const href = permalinkAnchor ? permalinkAnchor.getAttribute('href') : '';
-                    const m = href ? href.match(/\/([^/]+)\/status\/(\d+)/) : null;
-                    if (!m) continue;
-                    const tweetAuthor = m[1];
-                    const tweetId = m[2];
-                    const isOwn = Array.from(el.querySelectorAll('a[href]'))
-                        .some(a => a.getAttribute('href').toLowerCase() === `/${ownUser.toLowerCase()}`);
-                    const textEl = el.querySelector('div[data-testid="tweetText"]');
-                    const text = textEl ? textEl.innerText.trim() : '';
-                    results.push({ tweetId, tweetAuthor, tweetUrl: `https://x.com${href}`, isOwn, text });
+                for (let s = 0; s < 3; s++) {
+                    await this.page.evaluate(() => window.scrollBy(0, 600));
+                    await sleep(700);
                 }
-                return results;
-            }, ownUsername);
+                await this.page.evaluate(() => window.scrollTo(0, 0));
+                await sleep(500);
 
-            if (!commentInfos.length) return 0;
-
-            let repliedCount = 0;
-            const maxRepliesPerPost = this.farming.reply?.replies_per_post ?? 3;
-
-            for (let i = 0; i < commentInfos.length; i++) {
-                if (this._stopRequested || repliedCount >= maxRepliesPerPost) break;
-                const info = commentInfos[i];
-                if (info.isOwn) continue;
-
-                // Nếu tweet tiếp theo là của mình → đã reply comment này rồi, bỏ qua
-                const nextInfo = commentInfos[i + 1];
-                if (nextInfo?.isOwn) { i++; continue; }
-
-                if (!info.text) continue;
-
-                const detectedLang = await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi');
-
-                const commentText = await this.ai.generateReply({
-                    postText,
-                    commentText: info.text,
-                    commentAuthor: info.tweetAuthor,
-                    detectedLang,
-                }, this.profileTag).catch(err => {
-                    log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
-                    return null;
+                // Đọc nội dung bài gốc
+                const postText = await this.page.evaluate(() => {
+                    const el = document.querySelector('article[data-testid="tweet"] div[data-testid="tweetText"]');
+                    return el ? el.innerText.trim() : '';
                 });
-                if (!commentText) continue;
 
-                const success = await this._replyOnPostPage(info.tweetId, commentText);
-                if (success) {
-                    repliedCount++;
-                    log.success(`💬 Reply @${info.tweetAuthor}: "${commentText.substring(0, 50)}..."`, this.profileTag);
-                    await randomDelay(this.minActionDelay, this.maxActionDelay);
+                // Đọc tất cả comments với trạng thái isOwn mới nhất
+                const commentInfos = await this.page.evaluate((ownUser) => {
+                    const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                    const results = [];
+                    for (let i = 1; i < articles.length; i++) {
+                        const el = articles[i];
+                        const timeEl = el.querySelector('time');
+                        const a = timeEl ? timeEl.closest('a') : null;
+                        const href = a ? a.getAttribute('href') : '';
+                        const m = href ? href.match(/\/([^/]+)\/status\/(\d+)/) : null;
+                        if (!m) continue;
+                        const isOwn = Array.from(el.querySelectorAll('a[href]'))
+                            .some(link => link.getAttribute('href').toLowerCase() === `/${ownUser.toLowerCase()}`);
+                        const textEl = el.querySelector('div[data-testid="tweetText"]');
+                        results.push({
+                            tweetId: m[2],
+                            tweetAuthor: m[1],
+                            isOwn,
+                            text: textEl ? textEl.innerText.trim() : '',
+                        });
+                    }
+                    return results;
+                }, ownUsername);
+
+                // Tìm comment chưa reply trong lần load này
+                let foundUnreplied = false;
+                for (let i = 0; i < commentInfos.length; i++) {
+                    const info = commentInfos[i];
+                    if (info.isOwn) continue;
+                    const nextInfo = commentInfos[i + 1];
+                    if (nextInfo?.isOwn) { i++; continue; } // đã reply rồi
+                    if (!info.text) continue;
+
+                    foundUnreplied = true;
+                    const detectedLang = await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi');
+                    const commentText = await this.ai.generateReply({
+                        postText,
+                        commentText: info.text,
+                        commentAuthor: info.tweetAuthor,
+                        detectedLang,
+                    }, this.profileTag).catch(err => {
+                        log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
+                        return null;
+                    });
+                    if (!commentText) break;
+
+                    const success = await this._replyOnPostPage(info.tweetId, commentText);
+                    if (success) {
+                        repliedCount++;
+                        log.success(`💬 Reply @${info.tweetAuthor}: "${commentText.substring(0, 50)}..."`, this.profileTag);
+                        await randomDelay(this.minActionDelay, this.maxActionDelay);
+                    }
+                    break; // 1 reply mỗi lần navigate, rồi reload lại
                 }
+
+                if (!foundUnreplied) break; // không còn comment mới → dừng
             }
 
             return repliedCount;
