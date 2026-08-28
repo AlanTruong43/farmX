@@ -3,6 +3,24 @@
  * Trung tâm dữ liệu realtime cho dashboard SSE (X farming)
  */
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+
+const LOG_FILE = path.join(__dirname, '..', 'logs', 'app-logs.jsonl');
+const MAX_LOG_BUFFER = 5000; // in-memory limit
+const MAX_LOG_FILE = 5000;   // file limit
+
+function _loadLogsFromFile() {
+    try {
+        if (!fs.existsSync(LOG_FILE)) return [];
+        const lines = fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n').filter(Boolean);
+        const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        // Chỉ giữ MAX_LOG_FILE dòng cuối
+        return entries.slice(-MAX_LOG_FILE);
+    } catch {
+        return [];
+    }
+}
 
 class AppState extends EventEmitter {
     constructor() {
@@ -22,7 +40,10 @@ class AppState extends EventEmitter {
         this._pool = null;
 
         // ─── Shared ─────────────────────────────────────
-        this.logBuffer = []; // last 500 logs
+        // Load logs từ file khi khởi động — giữ nguyên qua các lần restart
+        try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }); } catch {}
+        this.logBuffer = _loadLogsFromFile();
+        this._logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
     }
 
     // ═══════════════════════════════════════════════════════
@@ -31,10 +52,22 @@ class AppState extends EventEmitter {
 
     pushLog(entry) {
         this.logBuffer.push(entry);
-        if (this.logBuffer.length > 500) {
+        if (this.logBuffer.length > MAX_LOG_BUFFER) {
             this.logBuffer.shift();
         }
+        // Ghi ra file để persist qua restart
+        try { this._logStream.write(JSON.stringify(entry) + '\n'); } catch {}
         this.emit('log', entry);
+    }
+
+    clearLogs() {
+        this.logBuffer = [];
+        try {
+            this._logStream.close();
+            fs.writeFileSync(LOG_FILE, '');
+            this._logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+        } catch {}
+        this.emit('logs-cleared');
     }
 
     // ═══════════════════════════════════════════════════════

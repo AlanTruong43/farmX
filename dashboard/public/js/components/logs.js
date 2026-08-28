@@ -8,7 +8,7 @@ let activeLevel = 'ALL';
 let activeProfile = 'ALL';
 let autoScroll = true;
 let logEntries = [];
-const MAX_DISPLAY = 500;
+const MAX_DISPLAY = 5000;
 
 export function render() {
     return `
@@ -75,8 +75,16 @@ export async function init() {
         autoScroll = e.target.checked;
     });
 
-    // Clear
-    document.getElementById('log-clear').addEventListener('click', () => {
+    // Clear — xóa cả server lẫn UI
+    document.getElementById('log-clear').addEventListener('click', async () => {
+        if (!confirm('Xóa toàn bộ logs? Thao tác này không thể hoàn tác.')) return;
+        try { await fetch('/api/logs', { method: 'DELETE' }); } catch {}
+        logEntries = [];
+        renderLogs();
+    });
+
+    // SSE: logs-cleared từ server (do tab khác clear hoặc API gọi)
+    on('logs-cleared', () => {
         logEntries = [];
         renderLogs();
     });

@@ -32,9 +32,14 @@ router.get('/stream', (req, res) => {
         res.write(`event: farming-status\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
+    const onLogsCleared = () => {
+        res.write(`event: logs-cleared\ndata: {}\n\n`);
+    };
+
     appState.on('log', onLog);
     appState.on('stats', onStats);
     appState.on('farming-status', onFarmingStatus);
+    appState.on('logs-cleared', onLogsCleared);
 
     // Heartbeat mỗi 15s để giữ kết nối
     const heartbeat = setInterval(() => {
@@ -47,6 +52,7 @@ router.get('/stream', (req, res) => {
         appState.off('log', onLog);
         appState.off('stats', onStats);
         appState.off('farming-status', onFarmingStatus);
+        appState.off('logs-cleared', onLogsCleared);
     });
 });
 
@@ -58,6 +64,12 @@ router.get('/history', (req, res) => {
 // GET /api/logs/status — runtime status
 router.get('/status', (req, res) => {
     res.json(appState.getStatus());
+});
+
+// DELETE /api/logs — xóa toàn bộ logs (chỉ khi user muốn clear thủ công)
+router.delete('/', (req, res) => {
+    appState.clearLogs();
+    res.json({ ok: true });
 });
 
 module.exports = router;
