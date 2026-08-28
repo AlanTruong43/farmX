@@ -662,7 +662,17 @@ class Farmer {
         // Vào profile lấy URLs bài đăng gần nhất
         this.page.once('dialog', d => d.accept().catch(() => {}));
         await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await sleep(2500);
+        await sleep(2000);
+
+        // Chờ ít nhất 1 article xuất hiện, rồi scroll nhẹ để load đủ bài
+        await this.page.waitForSelector('article[data-testid="tweet"]', { timeout: 10000 }).catch(() => {});
+        await sleep(1000);
+        for (let s = 0; s < 3; s++) {
+            await this.page.evaluate(() => window.scrollBy(0, 500));
+            await sleep(600);
+        }
+        await this.page.evaluate(() => window.scrollTo(0, 0));
+        await sleep(500);
 
         const postUrls = await this.page.evaluate((user, max) => {
             const seen = new Set();
