@@ -62,6 +62,9 @@ echo.
 echo  Nhấn Ctrl+C để dừng.
 echo.
 
+:: ─── Mở Chrome sau 2 giây (chờ server khởi động) ───────
+start /b cmd /c "timeout /t 2 >nul && start chrome http://localhost:3000"
+
 node main.js server
 
 pause

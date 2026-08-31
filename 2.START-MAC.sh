@@ -65,4 +65,7 @@ echo ""
 echo " Nhấn Ctrl+C để dừng."
 echo ""
 
+# ─── Mở Chrome sau 2 giây (chờ server khởi động) ────────
+(sleep 2 && open -a "Google Chrome" "http://localhost:3000") &
+
 node main.js server
