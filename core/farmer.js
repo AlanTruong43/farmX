@@ -823,26 +823,24 @@ class Farmer {
             await sleep(600);
             await replyBtn.click();
 
-            // Chờ textarea xuất hiện (tối đa 5s) — không cứng sleep 2000ms
+            // Chờ dialog reply xuất hiện — BẮT BUỘC phải có dialog, không fallback ra compose box chính
             let textArea = null;
             let replyDialog = null;
             try {
-                await this.page.waitForSelector(
-                    '[role="dialog"] div[data-testid="tweetTextarea_0"], div[data-testid="tweetTextarea_0"][contenteditable="true"]',
-                    { timeout: 5000 }
-                );
+                await this.page.waitForSelector('[role="dialog"]', { timeout: 5000 });
                 replyDialog = await this.page.$('[role="dialog"]');
-                textArea = replyDialog
-                    ? await replyDialog.$('div[data-testid="tweetTextarea_0"]')
-                    : await this.page.$('div[data-testid="tweetTextarea_0"][contenteditable="true"]');
+                if (replyDialog) {
+                    await this.page.waitForSelector('[role="dialog"] div[data-testid="tweetTextarea_0"]', { timeout: 3000 });
+                    textArea = await replyDialog.$('div[data-testid="tweetTextarea_0"]');
+                }
             } catch {
-                log.debug('Không tìm thấy textarea reply sau 5s', this.profileTag);
+                log.debug('Không tìm thấy dialog reply sau 5s — bỏ qua để tránh đăng nhầm', this.profileTag);
                 await this._dismissDialog();
                 return null;
             }
 
             if (!textArea) {
-                log.debug('Textarea reply không khả dụng', this.profileTag);
+                log.debug('Textarea reply trong dialog không khả dụng', this.profileTag);
                 await this._dismissDialog();
                 return null;
             }
@@ -862,9 +860,8 @@ class Farmer {
             await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
             await sleep(800);
 
-            const submitBtn = replyDialog
-                ? await replyDialog.$('button[data-testid="tweetButton"]')
-                : await this.page.$('button[data-testid="tweetButton"]');
+            // Submit chỉ từ trong dialog — tuyệt đối không submit button ngoài dialog
+            const submitBtn = await replyDialog.$('button[data-testid="tweetButton"]');
             if (!submitBtn) { await this._dismissDialog(); return null; }
 
             await submitBtn.click();
