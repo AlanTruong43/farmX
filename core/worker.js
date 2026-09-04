@@ -95,11 +95,19 @@ class Worker {
 
             log.success('Đã đăng nhập X ✓', this.profileTag);
 
-            // Lấy username X từ profile link
+            // Lấy username X từ profile link (chờ element sẵn sàng)
+            await this.page.waitForSelector('[data-testid="AppTabBar_Profile_Link"]', { timeout: 10000 }).catch(() => {});
             this.xUsername = await this.page.$eval(
                 '[data-testid="AppTabBar_Profile_Link"]',
-                el => (el.getAttribute('href') || '').replace('/', '').split('?')[0]
-            ).catch(() => this.profileTag);
+                el => (el.getAttribute('href') || '').replace('/', '').split('?')[0].trim()
+            ).catch(() => '');
+
+            if (!this.xUsername || this.xUsername.includes(' ')) {
+                log.warn(`Không lấy được Twitter username (lấy được: "${this.xUsername}"), bỏ qua shadowban check`, this.profileTag);
+                this.xUsername = ''; // sẽ skip shadowban check ở dưới
+            } else {
+                log.info(`Twitter username: @${this.xUsername}`, this.profileTag);
+            }
 
             // 4. Pre-init SheetsReporter đã bị xóa
 
@@ -124,8 +132,8 @@ class Worker {
                     totalLoops: loopCount,
                 });
 
-                // Shadow ban check trước mỗi loop
-                const banStatus = await this._checkShadowBan(this.xUsername);
+                // Shadow ban check trước mỗi loop (bỏ qua nếu không lấy được username)
+                const banStatus = this.xUsername ? await this._checkShadowBan(this.xUsername) : 'ok';
                 if (banStatus === 'ghost_ban') {
                     log.warn('🚫 Bị ghost ban! Dừng farming profile này.', this.profileTag);
                     appState.updateProfileStatus(this.profileTag, 'error', { error: 'Ghost ban detected' });
