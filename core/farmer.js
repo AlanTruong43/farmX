@@ -819,11 +819,18 @@ class Farmer {
                 return null;
             }
 
+            // Đóng dialog nếu đang mở sẵn trước khi click (tránh nhầm dialog cũ)
+            const existingDialog = await this.page.$('[role="dialog"]');
+            if (existingDialog) {
+                await this._dismissDialog();
+                await sleep(500);
+            }
+
             await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
             await sleep(600);
             await replyBtn.click();
 
-            // Chờ dialog reply xuất hiện — BẮT BUỘC phải có dialog, không fallback ra compose box chính
+            // Chờ dialog reply xuất hiện — BẮT BUỘC phải có dialog
             let textArea = null;
             let replyDialog = null;
             try {
@@ -845,6 +852,17 @@ class Farmer {
                 return null;
             }
 
+            // Xác nhận đây là dialog REPLY (nút submit phải có text "Reply", không phải "Post")
+            const submitBtnText = await replyDialog.evaluate(el => {
+                const btn = el.querySelector('button[data-testid="tweetButton"]');
+                return btn ? btn.innerText.trim() : '';
+            });
+            if (!submitBtnText.toLowerCase().includes('reply')) {
+                log.debug(`Dialog không phải reply (nút: "${submitBtnText}") — bỏ qua để tránh đăng nhầm`, this.profileTag);
+                await this._dismissDialog();
+                return null;
+            }
+
             // Textarea đã sẵn sàng → GỌI AI tạo nội dung
             const commentText = await this.ai.generateReply(replyData, this.profileTag).catch(err => {
                 log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
@@ -860,7 +878,7 @@ class Farmer {
             await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
             await sleep(800);
 
-            // Submit chỉ từ trong dialog — tuyệt đối không submit button ngoài dialog
+            // Submit chỉ từ trong dialog reply đã xác nhận
             const submitBtn = await replyDialog.$('button[data-testid="tweetButton"]');
             if (!submitBtn) { await this._dismissDialog(); return null; }
 
