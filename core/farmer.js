@@ -806,7 +806,7 @@ class Farmer {
                 for (const el of articles) {
                     const timeEl = el.querySelector('time');
                     const a = timeEl ? timeEl.closest('a') : null;
-                    if (a && (a.getAttribute('href') || '').includes(`/status/${id}`)) {
+                    if (a && (a.getAttribute('href') || '').match(new RegExp(`/status/${id}(?:/|$)`))) {
                         return el.querySelector('button[data-testid="reply"]');
                     }
                 }
