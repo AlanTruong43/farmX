@@ -349,14 +349,14 @@ class Worker {
         const url = `https://shadowban.yuzurisa.com/${username}`;
         log.info(`🔍 Checking shadow ban: @${username}`, this.profileTag);
 
-        for (let attempt = 1; attempt <= 5; attempt++) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 this.page.once('dialog', async d => { await d.accept().catch(() => {}); });
                 await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await sleep(1500);
 
-                // Poll kết quả tối đa 60s
-                const result = await this._pollShadowBanResult(60000);
+                // Poll kết quả tối đa 20s
+                const result = await this._pollShadowBanResult(20000);
 
                 if (result === 'no_ban') {
                     log.success('✅ Shadow ban: No ghost ban', this.profileTag);
@@ -373,7 +373,7 @@ class Worker {
                 }
 
                 // 'error' | 'not_found' | 'timeout' — thử lại
-                log.warn(`Shadow ban check: ${result} (lần ${attempt}/5), đợi 5s...`, this.profileTag);
+                log.warn(`Shadow ban check: ${result} (lần ${attempt}/3), đợi 5s...`, this.profileTag);
                 await sleep(5000);
 
                 if (attempt < 5) {
@@ -404,6 +404,8 @@ class Worker {
             if (/\bGhost ban\b/i.test(text) && !text.includes('No ghost ban')) return 'ghost_ban';
             if (text.includes('unable to test for technical reasons')) return 'error';
             if (text.includes('does not exist') || text.includes("doesn't have any tweets")) return 'not_found';
+            // Trang báo offline (lỗi kết nối phía shadowban.yuzurisa.com) — bỏ qua, không phải shadowban thật
+            if (text.includes('You are offline') || text.includes('offline')) return 'error';
             // Vẫn đang chạy "Running test..." — đợi tiếp
 
             await sleep(2000);
