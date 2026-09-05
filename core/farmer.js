@@ -677,6 +677,9 @@ class Farmer {
     async replyToComments(ownUsername, postCount = 3) {
         log.info(`💬 Reply mode: kiểm tra ${postCount} bài của @${ownUsername}`, this.profileTag);
 
+        // Đảm bảo viewport đủ lớn để X render posts và comments
+        await this.page.setViewport({ width: 1280, height: 800 }).catch(() => {});
+
         // Vào profile lấy URLs bài đăng gần nhất
         this.page.once('dialog', d => d.accept().catch(() => {}));
         await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -719,6 +722,12 @@ class Farmer {
 
         log.info(`Reply hoàn tất: ${totalReplied} comment mới`, this.profileTag);
 
+        // Restore viewport về kích thước profile gốc
+        const vp = this.config.farming?.viewport;
+        if (vp?.width && vp?.height) {
+            await this.page.setViewport({ width: vp.width, height: vp.height }).catch(() => {});
+        }
+
         // Quay về home
         await this.page.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
         await sleep(2000);
@@ -733,9 +742,6 @@ class Farmer {
         if (!this._repliedCommentIds) this._repliedCommentIds = new Set();
 
         try {
-            // Đảm bảo viewport đủ lớn để X render thread comments
-            await this.page.setViewport({ width: 1280, height: 800 }).catch(() => {});
-
             // Mỗi attempt: navigate lại trang để có DOM sạch, tránh "execution context destroyed"
             for (let attempt = 0; attempt < maxRepliesPerPost; attempt++) {
                 if (this._stopRequested) break;
@@ -821,11 +827,6 @@ class Farmer {
             return 0;
         } finally {
             this._validUrlPattern = prevPattern;
-            // Restore viewport về kích thước gốc của profile
-            const vp = this.config.farming?.viewport;
-            if (vp?.width && vp?.height) {
-                await this.page.setViewport({ width: vp.width, height: vp.height }).catch(() => {});
-            }
         }
     }
 
