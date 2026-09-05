@@ -685,17 +685,18 @@ class Farmer {
         await this.page.goto(`https://x.com/${ownUsername}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await sleep(2000);
 
-        // Chờ ít nhất 1 article xuất hiện, rồi scroll nhẹ để load đủ bài
-        await this.page.waitForSelector('article[data-testid="tweet"]', { timeout: 10000 }).catch(() => {});
-        await sleep(1000);
-        for (let s = 0; s < 3; s++) {
-            await this.page.evaluate(() => window.scrollBy(0, 500));
-            await sleep(600);
-        }
-        await this.page.evaluate(() => window.scrollTo(0, 0));
-        await sleep(500);
+        // Chờ đến khi có ít nhất 1 bài của chính user xuất hiện (tối đa 30s, retry mỗi 3s)
+        let postUrls = [];
+        for (let attempt = 1; attempt <= 10; attempt++) {
+            await this.page.waitForSelector('article[data-testid="tweet"]', { timeout: 8000 }).catch(() => {});
+            for (let s = 0; s < 3; s++) {
+                await this.page.evaluate(() => window.scrollBy(0, 500));
+                await sleep(600);
+            }
+            await this.page.evaluate(() => window.scrollTo(0, 0));
+            await sleep(500);
 
-        const postUrls = await this.page.evaluate((user, max) => {
+            postUrls = await this.page.evaluate((user, max) => {
             const seen = new Set();
             const result = [];
             const links = document.querySelectorAll('a[href*="/status/"]');
@@ -710,9 +711,16 @@ class Farmer {
                 }
             }
             return result;
-        }, ownUsername, postCount);
+            }, ownUsername, postCount);
 
-        log.debug(`Tìm thấy ${postUrls.length} bài để check reply`, this.profileTag);
+            log.debug(`[attempt ${attempt}/10] Tìm thấy ${postUrls.length} bài để check reply`, this.profileTag);
+            if (postUrls.length > 0) break;
+
+            // Reload trang và thử lại nếu chưa có bài
+            log.debug('Chưa thấy bài, reload và thử lại...', this.profileTag);
+            await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+            await sleep(3000);
+        }
 
         let totalReplied = 0;
         for (const url of postUrls) {
