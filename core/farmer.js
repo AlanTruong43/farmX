@@ -729,6 +729,8 @@ class Farmer {
         this._validUrlPattern = 'x.com';
         const maxRepliesPerPost = this.farming.reply?.replies_per_post ?? 3;
         let repliedCount = 0;
+        // Track tweetIds đã reply trong session để không reply lại
+        if (!this._repliedCommentIds) this._repliedCommentIds = new Set();
 
         try {
             // Đảm bảo viewport đủ lớn để X render thread comments
@@ -787,8 +789,10 @@ class Farmer {
                 for (let i = 0; i < commentInfos.length; i++) {
                     const info = commentInfos[i];
                     if (info.isOwn) continue;
+                    // Đã reply trong session này → bỏ qua
+                    if (this._repliedCommentIds.has(info.tweetId)) continue;
                     const nextInfo = commentInfos[i + 1];
-                    if (nextInfo?.isOwn) { i++; continue; } // đã reply rồi
+                    if (nextInfo?.isOwn) { i++; continue; } // đã reply rồi (phát hiện từ DOM)
 
                     foundUnreplied = true;
                     const replyData = {
@@ -797,11 +801,10 @@ class Farmer {
                         commentAuthor: info.tweetAuthor,
                         detectedLang: await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi'),
                     };
-                    // Navigate thẳng đến URL comment để reply button của nó là article[0]
-                    // Tránh click bị chặn bởi sticky header khi scroll trong thread dài
                     const commentUrl = `https://x.com/${info.tweetAuthor}/status/${info.tweetId}`;
                     const result = await this._replyByNavigatingToComment(commentUrl, replyData);
                     if (result) {
+                        this._repliedCommentIds.add(info.tweetId); // đánh dấu đã reply
                         repliedCount++;
                         log.success(`💬 Reply @${info.tweetAuthor}: "${result.substring(0, 50)}..."`, this.profileTag);
                         await randomDelay(this.minActionDelay, this.maxActionDelay);
@@ -924,11 +927,19 @@ class Farmer {
             await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
             await sleep(800);
 
-            // Submit — trong dialog hoặc trên page (inline)
-            const submitBtn = replyDialog
-                ? await replyDialog.$('button[data-testid="tweetButton"]').catch(() => null)
-                : await this.page.$('button[data-testid="tweetButton"]').catch(() => null);
-            if (!submitBtn) { await this._dismissDialog(); return null; }
+            // Submit — tìm button có text "Reply" để tránh nhầm với compose "Post" button
+            const submitBtn = await this.page.evaluateHandle(() => {
+                const buttons = Array.from(document.querySelectorAll('button[data-testid="tweetButton"]'));
+                return buttons.find(b => b.innerText.trim().toLowerCase().includes('reply')) || null;
+            }).catch(() => null);
+            const submitNull = !submitBtn || await submitBtn.evaluate(el => el === null).catch(() => true);
+            if (submitNull) {
+                log.debug('Không tìm thấy Reply submit button', this.profileTag);
+                await this._dismissDialog();
+                return null;
+            }
+            const submitBtnLabel = await submitBtn.evaluate(el => el.innerText.trim()).catch(() => '');
+            log.debug(`Submit button: "${submitBtnLabel}"`, this.profileTag);
 
             await submitBtn.click();
             await sleep(2500);
