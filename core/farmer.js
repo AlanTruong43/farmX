@@ -869,31 +869,36 @@ class Farmer {
             await sleep(600);
             await replyBtn.click();
 
-            // Chờ dialog reply
+            // Chờ dialog (feed) HOẶC inline reply box (tweet detail page)
             let replyDialog = null;
             let textArea = null;
-            try {
-                await this.page.waitForSelector('[role="dialog"]', { timeout: 5000 });
-                replyDialog = await this.page.$('[role="dialog"]');
-                if (replyDialog) {
-                    await this.page.waitForSelector('[role="dialog"] div[data-testid="tweetTextarea_0"]', { timeout: 3000 });
-                    textArea = await replyDialog.$('div[data-testid="tweetTextarea_0"]');
+            const [dialogEl, inlineEl] = await Promise.all([
+                this.page.waitForSelector('[role="dialog"]', { visible: true, timeout: 6000 }).catch(() => null),
+                this.page.waitForSelector('div[data-testid="tweetTextarea_0"][contenteditable="true"]', { visible: true, timeout: 6000 }).catch(() => null),
+            ]);
+
+            log.debug(`Reply UI: dialog=${!!dialogEl}, inline=${!!inlineEl}`, this.profileTag);
+
+            if (dialogEl) {
+                replyDialog = dialogEl;
+                textArea = await replyDialog.$('div[data-testid="tweetTextarea_0"]').catch(() => null);
+                // Xác nhận dialog là REPLY (không phải compose)
+                const submitBtnText = await replyDialog.evaluate(el => {
+                    const btn = el.querySelector('button[data-testid="tweetButton"]');
+                    return btn ? btn.innerText.trim() : '';
+                }).catch(() => '');
+                log.debug(`Dialog submit button: "${submitBtnText}"`, this.profileTag);
+                if (submitBtnText && !submitBtnText.toLowerCase().includes('reply')) {
+                    log.debug(`Dialog không phải reply (nút: "${submitBtnText}") — bỏ qua`, this.profileTag);
+                    await this._dismissDialog();
+                    return null;
                 }
-            } catch {
-                log.debug('Không tìm thấy dialog reply sau 5s', this.profileTag);
-                await this._dismissDialog();
-                return null;
+            } else if (inlineEl) {
+                textArea = inlineEl;
             }
 
-            if (!textArea) { await this._dismissDialog(); return null; }
-
-            // Xác nhận đây là dialog REPLY
-            const submitBtnText = await replyDialog.evaluate(el => {
-                const btn = el.querySelector('button[data-testid="tweetButton"]');
-                return btn ? btn.innerText.trim() : '';
-            });
-            if (!submitBtnText.toLowerCase().includes('reply')) {
-                log.debug(`Dialog không phải reply (nút: "${submitBtnText}") — bỏ qua`, this.profileTag);
+            if (!textArea) {
+                log.debug('Không tìm thấy reply textarea sau 6s', this.profileTag);
                 await this._dismissDialog();
                 return null;
             }
@@ -910,7 +915,10 @@ class Farmer {
             await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
             await sleep(800);
 
-            const submitBtn = await replyDialog.$('button[data-testid="tweetButton"]');
+            // Submit — trong dialog hoặc trên page (inline)
+            const submitBtn = replyDialog
+                ? await replyDialog.$('button[data-testid="tweetButton"]').catch(() => null)
+                : await this.page.$('button[data-testid="tweetButton"]').catch(() => null);
             if (!submitBtn) { await this._dismissDialog(); return null; }
 
             await submitBtn.click();
