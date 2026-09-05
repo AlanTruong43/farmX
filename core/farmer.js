@@ -731,6 +731,9 @@ class Farmer {
         let repliedCount = 0;
 
         try {
+            // Đảm bảo viewport đủ lớn để X render thread comments
+            await this.page.setViewport({ width: 1280, height: 800 }).catch(() => {});
+
             // Mỗi attempt: navigate lại trang để có DOM sạch, tránh "execution context destroyed"
             for (let attempt = 0; attempt < maxRepliesPerPost; attempt++) {
                 if (this._stopRequested) break;
@@ -777,6 +780,8 @@ class Farmer {
                     return results;
                 }, ownUsername);
 
+                log.debug(`commentInfos: ${JSON.stringify(commentInfos.map(c=>({id:c.tweetId,own:c.isOwn,hasText:!!c.text})))}`, this.profileTag);
+
                 // Tìm comment chưa reply trong lần load này
                 let foundUnreplied = false;
                 for (let i = 0; i < commentInfos.length; i++) {
@@ -784,7 +789,6 @@ class Farmer {
                     if (info.isOwn) continue;
                     const nextInfo = commentInfos[i + 1];
                     if (nextInfo?.isOwn) { i++; continue; } // đã reply rồi
-                    if (!info.text) continue;
 
                     foundUnreplied = true;
                     const replyData = {
@@ -814,6 +818,11 @@ class Farmer {
             return 0;
         } finally {
             this._validUrlPattern = prevPattern;
+            // Restore viewport về kích thước gốc của profile
+            const vp = this.config.farming?.viewport;
+            if (vp?.width && vp?.height) {
+                await this.page.setViewport({ width: vp.width, height: vp.height }).catch(() => {});
+            }
         }
     }
 
