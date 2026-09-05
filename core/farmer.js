@@ -494,6 +494,10 @@ class Farmer {
                 return false;
             }
 
+            // Log aria-label của reply button để xác nhận đúng nút
+            const replyBtnLabel = await replyBtn.evaluate(el => el.getAttribute('aria-label') || el.innerText || '').catch(() => '');
+            log.debug(`[submitComment] Click reply button: "${replyBtnLabel}"`, this.profileTag);
+
             // Scroll element vào giữa viewport trước khi click
             await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'smooth' }));
             await sleep(600);
@@ -510,6 +514,20 @@ class Farmer {
                 log.debug('Reply dialog không xuất hiện', this.profileTag, this._currentLoop);
                 await this._dismissDialog();
                 return false;
+            }
+
+            // Kiểm tra dialog có phải Compose (đăng bài) không — nếu có thì dismiss ngay
+            if (replyDialog) {
+                const dialogBtnText = await replyDialog.evaluate(el => {
+                    const btn = el.querySelector('button[data-testid="tweetButton"]');
+                    return btn ? btn.innerText.trim() : '';
+                }).catch(() => '');
+                log.debug(`[submitComment] Dialog xuất hiện — submit button: "${dialogBtnText}"`, this.profileTag);
+                if (dialogBtnText && !dialogBtnText.toLowerCase().includes('reply')) {
+                    log.warn(`[submitComment] Phát hiện dialog sai (nút: "${dialogBtnText}") — đây là compose box, dismiss`, this.profileTag);
+                    await this._dismissDialog();
+                    return false;
+                }
             }
 
             // Nếu có dialog, tìm textarea trong dialog; nếu không có dialog thì dùng inline box
