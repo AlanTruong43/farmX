@@ -769,14 +769,16 @@ class Farmer {
                     if (!info.text) continue;
 
                     foundUnreplied = true;
-                    // Truyền replyData vào — AI chỉ được gọi SAU khi textarea xuất hiện
                     const replyData = {
                         postText,
                         commentText: info.text,
                         commentAuthor: info.tweetAuthor,
                         detectedLang: await this.ai.detectLanguage({ text: info.text }, this.profileTag).catch(() => 'vi'),
                     };
-                    const result = await this._replyOnPostPage(info.tweetId, replyData);
+                    // Navigate thẳng đến URL comment để reply button của nó là article[0]
+                    // Tránh click bị chặn bởi sticky header khi scroll trong thread dài
+                    const commentUrl = `https://x.com/${info.tweetAuthor}/status/${info.tweetId}`;
+                    const result = await this._replyByNavigatingToComment(commentUrl, replyData);
                     if (result) {
                         repliedCount++;
                         log.success(`💬 Reply @${info.tweetAuthor}: "${result.substring(0, 50)}..."`, this.profileTag);
@@ -794,6 +796,87 @@ class Farmer {
             return 0;
         } finally {
             this._validUrlPattern = prevPattern;
+        }
+    }
+
+    // ─── Navigate đến URL comment rồi click reply button của article[0] ──
+    async _replyByNavigatingToComment(commentUrl, replyData) {
+        try {
+            log.debug(`Navigate đến comment để reply: ${commentUrl}`, this.profileTag);
+            this.page.once('dialog', d => d.accept().catch(() => {}));
+            await this.page.goto(commentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await sleep(2000);
+
+            // Chờ article load
+            await this.page.waitForSelector('article[data-testid="tweet"]', { timeout: 8000 }).catch(() => {});
+            await sleep(500);
+
+            // Click reply button của article[0] — đây chính là comment cần reply
+            const replyBtn = await this.page.$('article[data-testid="tweet"] button[data-testid="reply"]');
+            if (!replyBtn) {
+                log.debug('Không tìm thấy reply button trên trang comment', this.profileTag);
+                return null;
+            }
+
+            // Đóng dialog cũ nếu có
+            const existingDialog = await this.page.$('[role="dialog"]');
+            if (existingDialog) { await this._dismissDialog(); await sleep(400); }
+
+            await replyBtn.evaluate(el => el.scrollIntoView({ block: 'center' }));
+            await sleep(600);
+            await replyBtn.click();
+
+            // Chờ dialog reply
+            let replyDialog = null;
+            let textArea = null;
+            try {
+                await this.page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+                replyDialog = await this.page.$('[role="dialog"]');
+                if (replyDialog) {
+                    await this.page.waitForSelector('[role="dialog"] div[data-testid="tweetTextarea_0"]', { timeout: 3000 });
+                    textArea = await replyDialog.$('div[data-testid="tweetTextarea_0"]');
+                }
+            } catch {
+                log.debug('Không tìm thấy dialog reply sau 5s', this.profileTag);
+                await this._dismissDialog();
+                return null;
+            }
+
+            if (!textArea) { await this._dismissDialog(); return null; }
+
+            // Xác nhận đây là dialog REPLY
+            const submitBtnText = await replyDialog.evaluate(el => {
+                const btn = el.querySelector('button[data-testid="tweetButton"]');
+                return btn ? btn.innerText.trim() : '';
+            });
+            if (!submitBtnText.toLowerCase().includes('reply')) {
+                log.debug(`Dialog không phải reply (nút: "${submitBtnText}") — bỏ qua`, this.profileTag);
+                await this._dismissDialog();
+                return null;
+            }
+
+            // Gọi AI sau khi đã có textarea
+            const commentText = await this.ai.generateReply(replyData, this.profileTag).catch(err => {
+                log.warn(`AI lỗi khi reply: ${err.message}`, this.profileTag);
+                return null;
+            });
+            if (!commentText) { await this._dismissDialog(); return null; }
+
+            await textArea.click();
+            await sleep(300);
+            await this.page.keyboard.type(commentText, { delay: Math.floor(Math.random() * 60) + 20 });
+            await sleep(800);
+
+            const submitBtn = await replyDialog.$('button[data-testid="tweetButton"]');
+            if (!submitBtn) { await this._dismissDialog(); return null; }
+
+            await submitBtn.click();
+            await sleep(2500);
+            return commentText;
+        } catch (err) {
+            log.debug(`_replyByNavigatingToComment lỗi: ${err.message}`, this.profileTag);
+            await this._dismissDialog();
+            return null;
         }
     }
 
