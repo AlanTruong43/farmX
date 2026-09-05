@@ -811,10 +811,35 @@ class Farmer {
             await this.page.waitForSelector('article[data-testid="tweet"]', { timeout: 8000 }).catch(() => {});
             await sleep(500);
 
-            // Click reply button của article[0] — đây chính là comment cần reply
-            const replyBtn = await this.page.$('article[data-testid="tweet"] button[data-testid="reply"]');
-            if (!replyBtn) {
-                log.debug('Không tìm thấy reply button trên trang comment', this.profileTag);
+            // Lấy tweetId từ cuối URL để tìm đúng article (tránh click vào parent context tweet)
+            const tweetIdFromUrl = (commentUrl.match(/\/status\/(\d+)/) || [])[1];
+
+            // Debug: log danh sách article hrefs để diagnose
+            const articleInfo = await this.page.evaluate(() => {
+                const arts = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                return arts.map(el => {
+                    const a = el.querySelector('time')?.closest('a');
+                    const btn = el.querySelector('button[data-testid="reply"]');
+                    return { href: a?.getAttribute('href') || '', hasReplyBtn: !!btn };
+                });
+            });
+            log.debug(`Articles trên trang: ${JSON.stringify(articleInfo)}`, this.profileTag);
+
+            const replyBtn = await this.page.evaluateHandle((id) => {
+                const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+                for (const el of articles) {
+                    const timeEl = el.querySelector('time');
+                    const a = timeEl ? timeEl.closest('a') : null;
+                    if (a && (a.getAttribute('href') || '').match(new RegExp(`/status/${id}(?:/|$)`))) {
+                        return el.querySelector('button[data-testid="reply"]');
+                    }
+                }
+                return null;
+            }, tweetIdFromUrl);
+
+            const btnNull = await replyBtn.evaluate(el => el === null).catch(() => true);
+            if (btnNull) {
+                log.debug(`Không tìm thấy reply button cho tweetId=${tweetIdFromUrl}`, this.profileTag);
                 return null;
             }
 
