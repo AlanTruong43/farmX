@@ -29,6 +29,7 @@ class Worker {
         this.slotIndex = null;
         this.isRunning = false;
         this._stopRequested = false;
+        this._restartDelayMs = 0;
     }
 
     /**
@@ -135,8 +136,9 @@ class Worker {
                 // Shadow ban check trước mỗi loop (bỏ qua nếu không lấy được username)
                 const banStatus = this.xUsername ? await this._checkShadowBan(this.xUsername) : 'ok';
                 if (banStatus === 'ghost_ban') {
-                    log.warn('🚫 Bị ghost ban! Dừng farming profile này.', this.profileTag);
+                    log.warn('🚫 Bị ghost ban! Dừng farming, tự động thử lại sau 5 phút...', this.profileTag);
                     appState.updateProfileStatus(this.profileTag, 'error', { error: 'Ghost ban detected' });
+                    this._restartDelayMs = 5 * 60 * 1000;
                     break;
                 }
                 if (this._stopRequested) break;
@@ -204,8 +206,12 @@ class Worker {
 
         } catch (err) {
             const isDetached = err.message?.includes('detached') || err.message?.includes('Navigating frame');
+            const isNetworkErr = err.message?.includes('Navigation timeout') || err.message?.includes('net::ERR_') || err.message?.includes('ERR_ABORTED');
             if (isDetached) {
                 log.warn('Browser bị detach (có thể do Stop), dừng farming', this.profileTag);
+            } else if (isNetworkErr) {
+                log.warn(`Lỗi kết nối/proxy: ${err.message} — tự động thử lại sau 5 phút`, this.profileTag);
+                this._restartDelayMs = 5 * 60 * 1000;
             } else {
                 log.error(`Lỗi nghiêm trọng: ${err.message}`, this.profileTag);
             }
@@ -219,6 +225,24 @@ class Worker {
         } finally {
             await this.cleanup();
             this.isRunning = false;
+        }
+
+        // Auto-restart sau ghost ban hoặc lỗi kết nối
+        if (this._restartDelayMs && !this._stopRequested) {
+            const delayMs = this._restartDelayMs;
+            this._restartDelayMs = 0;
+            log.info(`⏳ Tự động khởi động lại sau ${delayMs / 60000} phút...`, this.profileTag);
+            appState.updateProfileStatus(this.profileTag, 'waiting', { restartAt: Date.now() + delayMs });
+            const tick = 1000;
+            let elapsed = 0;
+            while (elapsed < delayMs && !this._stopRequested) {
+                await sleep(tick);
+                elapsed += tick;
+            }
+            if (!this._stopRequested) {
+                log.info('🔄 Đang khởi động lại farming...', this.profileTag);
+                await this.run();
+            }
         }
     }
 
