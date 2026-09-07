@@ -217,12 +217,17 @@ function updateStats(status) {
         const loopInfo = data.currentLoop ? ` — Loop ${data.currentLoop}/${data.totalLoops}` : '';
         const stats = data.stats || {};
         return `<div class="profile-row">
-            <strong class="profile-tag">${tag}</strong>
-            ${statusBadge}
-            <span class="text-secondary text-xs">${loopInfo}</span>
-            <span class="profile-stats">
-                P:${stats.processed||0} L:${stats.liked||0} F:${stats.followed||0} C:${stats.commented||0}
-            </span>
+            <div class="profile-row-top">
+                <strong class="profile-tag">${tag}</strong>
+                ${statusBadge}
+                <span class="text-secondary text-xs">${loopInfo}</span>
+            </div>
+            <div class="profile-mini-stats">
+                <div class="mini-stat"><span class="mini-label">Tweets</span><span class="mini-val accent">${stats.processed||0}</span></div>
+                <div class="mini-stat"><span class="mini-label">Liked</span><span class="mini-val success">${stats.liked||0}</span></div>
+                <div class="mini-stat"><span class="mini-label">Followed</span><span class="mini-val accent">${stats.followed||0}</span></div>
+                <div class="mini-stat"><span class="mini-label">Commented</span><span class="mini-val warning">${stats.commented||0}</span></div>
+            </div>
         </div>`;
     }).join('');
 }
