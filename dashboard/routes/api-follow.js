@@ -223,19 +223,26 @@ router.get('/stream', async (req, res) => {
                     continue;
                 }
 
-                await sleep(200);
+                // Dismiss hover card cũ trước khi hover user mới
+                await page.mouse.move(10, 10);
+                await page.waitForFunction(
+                    () => !document.querySelector('[data-testid="HoverCard"]'),
+                    { timeout: 1500 }
+                ).catch(() => {});
+                await sleep(150);
+
                 try {
                     await page.mouse.move(hoverPos.x, hoverPos.y);
                     const hoverCard = await page.waitForSelector('[data-testid="HoverCard"]', { timeout: 3000 }).catch(() => null);
                     if (hoverCard) {
-                        await sleep(400);
+                        await sleep(500);
                         const stats = await getHoverCardStats(page);
                         if (stats) {
                             send('stats', { username: cell.username, ...stats, error: false });
                         } else {
                             send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                         }
-                        await page.mouse.move(10, 400);
+                        await page.mouse.move(10, 10);
                         await sleep(200);
                     } else {
                         send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
@@ -243,7 +250,7 @@ router.get('/stream', async (req, res) => {
                 } catch {
                     send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
                 }
-                await sleep(200);
+                await sleep(150);
             }
 
             if (added === 0) noNewCount++;
