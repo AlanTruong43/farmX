@@ -183,11 +183,11 @@ router.get('/stream', async (req, res) => {
                 }).filter(Boolean);
             }).catch(() => []);
 
-            // Emit tất cả user mới (kể cả ngoài viewport) — bỏ điều kiện inViewport
+            // Với mỗi user mới: emit ngay, scroll vào viewport, rồi hover lấy stats
             let added = 0;
-            const inViewportCells = [];
             for (const cell of cells) {
                 if (!cell.username || seen.has(cell.username.toLowerCase())) continue;
+                if (clientClosed || res.writableEnded) break;
                 seen.add(cell.username.toLowerCase());
                 added++;
 
@@ -199,14 +199,33 @@ router.get('/stream', async (req, res) => {
                     verifiedType: cell.verifiedType,
                 });
 
-                if (cell.inViewport) inViewportCells.push(cell);
-            }
+                // Scroll cell vào giữa viewport, lấy lại tọa độ hover mới
+                const hoverPos = await page.evaluate((uname) => {
+                    const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
+                    for (const cell of primary.querySelectorAll('[data-testid="UserCell"]')) {
+                        let u = null;
+                        for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
+                            const parts = (link.getAttribute('href') || '').split('/').filter(Boolean);
+                            if (parts.length === 1 && !link.href.includes('/i/')) { u = parts[0]; break; }
+                        }
+                        if (u?.toLowerCase() !== uname) continue;
+                        const nameLink = cell.querySelector('a[href^="/"][role="link"]');
+                        const target = nameLink || cell;
+                        target.scrollIntoView({ block: 'center', behavior: 'instant' });
+                        const rect = target.getBoundingClientRect();
+                        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                    }
+                    return null;
+                }, cell.username.toLowerCase()).catch(() => null);
 
-            // Hover stats chỉ cho cell đang trong viewport (không thể hover cell ẩn)
-            for (const cell of inViewportCells) {
-                if (clientClosed || res.writableEnded) break;
+                if (!hoverPos) {
+                    send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
+                    continue;
+                }
+
+                await sleep(200);
                 try {
-                    await page.mouse.move(cell.hoverX, cell.hoverY);
+                    await page.mouse.move(hoverPos.x, hoverPos.y);
                     const hoverCard = await page.waitForSelector('[data-testid="HoverCard"]', { timeout: 3000 }).catch(() => null);
                     if (hoverCard) {
                         await sleep(400);
@@ -217,14 +236,14 @@ router.get('/stream', async (req, res) => {
                             send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                         }
                         await page.mouse.move(10, 400);
-                        await sleep(300);
+                        await sleep(200);
                     } else {
                         send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                     }
                 } catch {
                     send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
                 }
-                await sleep(300);
+                await sleep(200);
             }
 
             if (added === 0) noNewCount++;
