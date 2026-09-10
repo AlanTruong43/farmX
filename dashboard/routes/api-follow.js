@@ -136,14 +136,13 @@ router.get('/stream', async (req, res) => {
         const seen = new Set();
         let noNewCount = 0;
 
-        while (noNewCount < 4) {
+        while (noNewCount < 8) {
             if (clientClosed || res.writableEnded) break;
 
             // Lấy tất cả UserCell trong primaryColumn (tránh sidebar)
             const cells = await page.evaluate(() => {
                 const primary = document.querySelector('[data-testid="primaryColumn"]') || document;
                 return [...primary.querySelectorAll('[data-testid="UserCell"]')].map(cell => {
-                    // username
                     let username = null;
                     for (const link of cell.querySelectorAll('a[href^="/"][role="link"]')) {
                         const parts = (link.getAttribute('href') || '').split('/').filter(Boolean);
@@ -151,29 +150,22 @@ router.get('/stream', async (req, res) => {
                     }
                     if (!username) return null;
 
-                    // display name
                     const nameEl = cell.querySelector('div[dir="ltr"] span span');
                     const displayName = nameEl?.textContent.trim() || username;
 
-                    // avatar
                     const img = cell.querySelector('img[src*="profile_images"]') || cell.querySelector('img[src*="pbs.twimg"]');
                     const avatarUrl = img ? img.src.replace('_normal', '_bigger') : null;
 
-                    // verified type:
-                    // - Gold tick dùng <linearGradient> bên trong SVG (không có fill màu đơn)
-                    // - Blue tick dùng SVG với path fill đơn màu xanh
                     let verifiedType = null;
                     const verifiedEl = cell.querySelector('[data-testid="icon-verified"]');
                     if (verifiedEl) {
                         const svgHtml = verifiedEl.innerHTML;
-                        // Gold: có linearGradient hoặc stop-color vàng
                         const isGold = svgHtml.includes('linearGradient')
                             || /stop-color.*#f4e|stop-color.*#cd8|stop-color.*#cb7/i.test(svgHtml)
                             || /ffd400|f4e72a|cd8105|cb7b00/i.test(svgHtml);
                         verifiedType = isGold ? 'gold' : 'blue';
                     }
 
-                    // vị trí để hover (giữa phần tên)
                     const nameLink = cell.querySelector('a[href^="/"][role="link"]');
                     const rect = nameLink ? nameLink.getBoundingClientRect() : cell.getBoundingClientRect();
                     const vh = window.innerHeight;
@@ -185,20 +177,20 @@ router.get('/stream', async (req, res) => {
                         verifiedType,
                         hoverX: rect.left + rect.width / 2,
                         hoverY: rect.top + rect.height / 2,
-                        inViewport: rect.top >= 0 && rect.bottom <= vh,
+                        // inViewport chỉ dùng để hover — không lọc khi emit
+                        inViewport: rect.top >= -100 && rect.bottom <= vh + 100,
                     };
                 }).filter(Boolean);
             }).catch(() => []);
 
+            // Emit tất cả user mới (kể cả ngoài viewport) — bỏ điều kiện inViewport
             let added = 0;
+            const inViewportCells = [];
             for (const cell of cells) {
                 if (!cell.username || seen.has(cell.username.toLowerCase())) continue;
-                if (!cell.inViewport) continue;
-
                 seen.add(cell.username.toLowerCase());
                 added++;
 
-                // Emit user ngay — frontend hiện row
                 log.debug(`follow/stream: user #${seen.size} @${cell.username}${cell.verifiedType ? ' [' + cell.verifiedType + ']' : ''}`);
                 send('user', {
                     username: cell.username,
@@ -207,32 +199,31 @@ router.get('/stream', async (req, res) => {
                     verifiedType: cell.verifiedType,
                 });
 
-                // Hover để lấy stats
+                if (cell.inViewport) inViewportCells.push(cell);
+            }
+
+            // Hover stats chỉ cho cell đang trong viewport (không thể hover cell ẩn)
+            for (const cell of inViewportCells) {
+                if (clientClosed || res.writableEnded) break;
                 try {
                     await page.mouse.move(cell.hoverX, cell.hoverY);
                     const hoverCard = await page.waitForSelector('[data-testid="HoverCard"]', { timeout: 3000 }).catch(() => null);
-
                     if (hoverCard) {
-                        await sleep(400); // chờ số liệu render
+                        await sleep(400);
                         const stats = await getHoverCardStats(page);
                         if (stats) {
-                            log.debug(`follow/stream: stats @${cell.username} — following=${stats.following} followers=${stats.followers} followsYou=${stats.followsYou}`);
                             send('stats', { username: cell.username, ...stats, error: false });
                         } else {
-                            log.warn(`follow/stream: không lấy được stats @${cell.username}`);
                             send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                         }
-                        // Dismiss hover card
                         await page.mouse.move(10, 400);
                         await sleep(300);
                     } else {
-                        log.warn(`follow/stream: không thấy hover card @${cell.username}`);
                         send('stats', { username: cell.username, following: null, followers: null, followsYou: null, error: true });
                     }
                 } catch {
                     send('stats', { username: cell.username, following: null, followers: null, followsYou: false });
                 }
-
                 await sleep(300);
             }
 
