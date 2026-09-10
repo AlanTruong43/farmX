@@ -71,6 +71,10 @@ let state = {
     filterNotFollowBack: false,
     filterBlue: false,
     filterGold: false,
+    filterFollowingMin: '',
+    filterFollowingMax: '',
+    filterFollowersMin: '',
+    filterFollowersMax: '',
     loading: false,
     xUsername: null,
     // Cache riêng cho mỗi tab (following / followers)
@@ -166,6 +170,18 @@ export function render() {
                 <input type="checkbox" id="fc-filter-gold">
                 <span style="display:inline-flex;align-items:center;gap:3px">${svgGoldTick()} Tick vàng</span>
             </label>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
+                <span>Đang theo dõi:</span>
+                <input type="number" id="fc-fw-min" placeholder="Min" min="0" style="width:70px;padding:2px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+                <span>—</span>
+                <input type="number" id="fc-fw-max" placeholder="Max" min="0" style="width:70px;padding:2px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);white-space:nowrap">
+                <span>Người theo dõi:</span>
+                <input type="number" id="fc-fo-min" placeholder="Min" min="0" style="width:70px;padding:2px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+                <span>—</span>
+                <input type="number" id="fc-fo-max" placeholder="Max" min="0" style="width:70px;padding:2px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);color:var(--text-primary)">
+            </div>
             <div id="fc-result-count" style="margin-left:auto;font-size:12px;color:var(--text-muted)"></div>
         </div>
 
@@ -396,6 +412,13 @@ function bindEvents() {
         renderList();
     });
 
+    ['fc-fw-min','fc-fw-max','fc-fo-min','fc-fo-max'].forEach(id => {
+        document.getElementById(id).addEventListener('input', e => {
+            state[{ 'fc-fw-min':'filterFollowingMin', 'fc-fw-max':'filterFollowingMax', 'fc-fo-min':'filterFollowersMin', 'fc-fo-max':'filterFollowersMax' }[id]] = e.target.value;
+            renderList();
+        });
+    });
+
     document.getElementById('fc-select-all').addEventListener('change', e => {
         state.users.filter(u => userPassesFilter(u) && userPassesFollowFilter(u)).forEach(u => {
             if (e.target.checked) state.selected.add(u.username);
@@ -618,6 +641,10 @@ function userPassesFilter(u) {
     }
     if (state.filterBlue && u.verifiedType !== 'blue') return false;
     if (state.filterGold && u.verifiedType !== 'gold') return false;
+    if (state.filterFollowingMin !== '' && u.following != null && u.following < Number(state.filterFollowingMin)) return false;
+    if (state.filterFollowingMax !== '' && u.following != null && u.following > Number(state.filterFollowingMax)) return false;
+    if (state.filterFollowersMin !== '' && u.followers != null && u.followers < Number(state.filterFollowersMin)) return false;
+    if (state.filterFollowersMax !== '' && u.followers != null && u.followers > Number(state.filterFollowersMax)) return false;
     return true;
 }
 
