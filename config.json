@@ -33,12 +33,20 @@
         "max": 2000
     },
     "dashboard": {
-        "port": 3000
+        "port": 3002
     },
     "google_sheets": {
         "enabled": true,
         "spreadsheet_id": "1qO_STcNFAWQUqTf7GaZMxdUi8AL4cDTQy3qjwAnpiEw",
         "credentials_path": "./google-credentials.json",
         "sheet_name": "Farming Report"
+    },
+    "follow_check_window": {
+        "width": 800,
+        "height": 900
+    },
+    "farming_window": {
+        "width": 600,
+        "height": 400
     }
 }
