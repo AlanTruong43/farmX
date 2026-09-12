@@ -110,8 +110,10 @@ class AppState extends EventEmitter {
 
     setFarmingActive(active) {
         this.farmingActive = active;
-        if (!active) {
+        if (active) {
+            // Reset khi bắt đầu session mới
             this.activeProfiles.clear();
+            this.globalStats = { totalProcessed: 0, totalLiked: 0, totalCommented: 0, totalFollowed: 0, sessionsCompleted: 0 };
         }
         this.emit('farming-status', { active });
         this.emit('stats', this.getStatus());

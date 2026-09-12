@@ -166,12 +166,7 @@ class Worker {
                     appState.updateProfileStats(this.profileTag, loopStats);
                 }
 
-                // Dừng nếu API lỗi 5 loop liên tiếp
-                if (loopStats?.apiDisabled || farmer.isApiDown()) {
-                    log.error('Dừng profile do API lỗi liên tiếp', this.profileTag);
-                    appState.updateProfileStatus(this.profileTag, 'error', { error: 'API down after 5 loops' });
-                    break;
-                }
+                // Không dừng profile khi API lỗi — tiếp tục farm, chỉ skip comment
 
                 // Delay giữa các loop + thông báo nghỉ
                 if (loop < loopCount && !this._stopRequested) {

@@ -300,11 +300,7 @@ class Farmer {
         // Cập nhật bộ đếm lỗi API liên tiếp
         if (loopHadApiError && commentedCount === 0) {
             this._apiErrorLoops++;
-            log.warn(`API lỗi ${this._apiErrorLoops}/5 loop liên tiếp`, this.profileTag, this._currentLoop);
-            if (this._apiErrorLoops >= 5) {
-                this._apiDisabled = true;
-                log.error('API lỗi 5 loop liên tiếp — dừng profile!', this.profileTag);
-            }
+            log.warn(`API lỗi ${this._apiErrorLoops} loop liên tiếp — tiếp tục farm`, this.profileTag, this._currentLoop);
         } else if (commentedCount > 0) {
             // Reset counter khi comment thành công
             this._apiErrorLoops = 0;
